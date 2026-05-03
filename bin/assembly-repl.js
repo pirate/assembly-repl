@@ -4,14 +4,15 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
-const platform = process.platform;
-const arch = process.arch;
-const dir = `${platform}-${arch}`;
-const binary = path.join(__dirname, '..', 'prebuilds', dir, 'assembly-repl');
+const root = path.join(__dirname, '..');
+const dir = `${process.platform}-${process.arch}`;
+const binary = path.join(root, 'prebuilds', dir, 'assembly-repl');
 
-if (!fs.existsSync(binary)) {
+try {
+    fs.accessSync(binary, fs.constants.X_OK);
+} catch {
     console.error(`assembly-repl: no prebuilt binary for ${dir}.`);
-    console.error('Supported: darwin-arm64, linux-x64. Build from source with `make`.');
+    console.error('Supported: darwin-arm64, linux-arm64, linux-x64.');
     process.exit(1);
 }
 

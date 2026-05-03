@@ -16,32 +16,49 @@
 
 #if defined(__APPLE__) && defined(__aarch64__)
 #  define ASMREPL_APPLE_ARM64 1
-#  include <mach-o/loader.h>
-#  include <libkern/OSCacheControl.h>
+#elif defined(__APPLE__) && defined(__x86_64__)
+#  define ASMREPL_APPLE_X86_64 1
+#elif defined(__linux__) && defined(__aarch64__)
+#  define ASMREPL_LINUX_ARM64 1
 #elif defined(__linux__) && defined(__x86_64__)
 #  define ASMREPL_LINUX_X86_64 1
+#else
+#  error "asmrepl: unsupported platform; supported: macOS arm64/x86_64, Linux arm64/x86_64"
+#endif
+
+#if defined(ASMREPL_APPLE_ARM64) || defined(ASMREPL_LINUX_ARM64)
+#  define ASMREPL_ARCH_ARM64 1
+#endif
+#if defined(ASMREPL_APPLE_X86_64) || defined(ASMREPL_LINUX_X86_64)
+#  define ASMREPL_ARCH_X86_64 1
+#endif
+
+#ifdef __APPLE__
+#  include <mach-o/loader.h>
+#  include <libkern/OSCacheControl.h>
+#  define ASMREPL_FORMAT_MACHO 1
+#  define ENTRY_SYMBOL "_asmrepl_entry"
+#else
 #  include <elf.h>
+#  define ASMREPL_FORMAT_ELF 1
+#  define ENTRY_SYMBOL "asmrepl_entry"
 #  ifndef MAP_ANON
 #    define MAP_ANON MAP_ANONYMOUS
 #  endif
-#else
-#  error "asmrepl: unsupported platform; supported: macOS arm64, Linux x86_64"
 #endif
 
 #define BUILD_DIR ".asmrepl-build"
 #define SCRATCH_SIZE 4096
 #define MAX_INPUT 4096
 
-#if ASMREPL_APPLE_ARM64
-#  define ENTRY_SYMBOL "_asmrepl_entry"
+#if ASMREPL_ARCH_ARM64
 #  define REG_COUNT 31
 typedef struct {
     uint64_t x[REG_COUNT];
     uint64_t nzcv;
     uint64_t sp;
 } reg_context_t;
-#elif ASMREPL_LINUX_X86_64
-#  define ENTRY_SYMBOL "asmrepl_entry"
+#elif ASMREPL_ARCH_X86_64
 typedef struct {
     /* Offsets are referenced from the JIT wrapper; do not reorder. */
     uint64_t rax;     /* 0   */
@@ -189,23 +206,23 @@ static void ensure_build_dir(void) {
 
 static void reset_context(reg_context_t *ctx, void *scratch) {
     memset(ctx, 0, sizeof(*ctx));
-#if ASMREPL_APPLE_ARM64
+#if ASMREPL_ARCH_ARM64
     ctx->x[19] = (uint64_t)(uintptr_t)scratch;
     ctx->x[20] = SCRATCH_SIZE;
-#elif ASMREPL_LINUX_X86_64
+#elif ASMREPL_ARCH_X86_64
     ctx->r15 = (uint64_t)(uintptr_t)scratch;
     ctx->r14 = SCRATCH_SIZE;
 #endif
 }
 
-#if ASMREPL_APPLE_ARM64
+#if ASMREPL_ARCH_ARM64
 static void print_flags_arm(uint64_t nzcv) {
     putchar((nzcv & (1ULL << 31)) ? 'N' : 'n');
     putchar((nzcv & (1ULL << 30)) ? 'Z' : 'z');
     putchar((nzcv & (1ULL << 29)) ? 'C' : 'c');
     putchar((nzcv & (1ULL << 28)) ? 'V' : 'v');
 }
-#elif ASMREPL_LINUX_X86_64
+#elif ASMREPL_ARCH_X86_64
 static void print_flags_x86(uint64_t rflags) {
     /* Print the common arithmetic flags. Bit numbers per Intel SDM. */
     putchar((rflags & (1ULL << 11)) ? 'O' : 'o'); /* overflow */
@@ -218,7 +235,7 @@ static void print_flags_x86(uint64_t rflags) {
 #endif
 
 static void print_regs(const reg_context_t *ctx) {
-#if ASMREPL_APPLE_ARM64
+#if ASMREPL_ARCH_ARM64
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 4; col++) {
             int reg = row * 4 + col;
@@ -235,7 +252,7 @@ static void print_regs(const reg_context_t *ctx) {
            (unsigned long long)ctx->nzcv);
     print_flags_arm(ctx->nzcv);
     puts("]");
-#elif ASMREPL_LINUX_X86_64
+#elif ASMREPL_ARCH_X86_64
     static const struct { const char *name; size_t off; } gprs[] = {
         {"rax", offsetof(reg_context_t, rax)},
         {"rcx", offsetof(reg_context_t, rcx)},
@@ -270,7 +287,9 @@ static void print_regs(const reg_context_t *ctx) {
 static void print_help(void) {
 #if ASMREPL_APPLE_ARM64
     puts("Enter Apple ARM64 assembly.");
-#elif ASMREPL_LINUX_X86_64
+#elif ASMREPL_LINUX_ARM64
+    puts("Enter Linux arm64 assembly.");
+#elif ASMREPL_ARCH_X86_64
     puts("Enter x86_64 assembly (Intel syntax; the wrapper sets .intel_syntax noprefix).");
 #endif
     puts("");
@@ -290,11 +309,11 @@ static void print_help(void) {
     puts("  The block is committed when you outdent.");
     puts("");
     puts("Notes:");
-#if ASMREPL_APPLE_ARM64
+#if ASMREPL_ARCH_ARM64
     puts("  x19 starts as a writable scratch page pointer.");
     puts("  x20 starts as the scratch page size.");
     puts("  The wrapper depends on the real process sp; unbalanced sp changes may crash.");
-#elif ASMREPL_LINUX_X86_64
+#elif ASMREPL_ARCH_X86_64
     puts("  r15 starts as a writable scratch page pointer.");
     puts("  r14 starts as the scratch page size.");
     puts("  The wrapper depends on the real process rsp; unbalanced rsp changes may crash.");
@@ -331,7 +350,7 @@ static int run_command(char *const argv[]) {
     return 1;
 }
 
-#if ASMREPL_APPLE_ARM64
+#if ASMREPL_ARCH_ARM64
 static void emit_load_registers(FILE *fp) {
     for (int reg = 1; reg <= 30; reg++) {
         fprintf(fp, "  ldr x%d, [x0, #%d]\n", reg, reg * 8);
@@ -384,9 +403,9 @@ static void emit_wrapper(FILE *fp, const char *line) {
     fputs("  add sp, sp, #128\n", fp);
     fputs("  ret\n", fp);
 }
-#elif ASMREPL_LINUX_X86_64
+#elif ASMREPL_ARCH_X86_64
 /*
- * Wrapper for Linux x86_64.
+ * Wrapper for x86_64 (System V ABI; Linux and Intel macOS share this).
  *
  * On entry, System V ABI puts the reg_context_t* in rdi. We:
  *   1. Save callee-saved registers (rbx, rbp, r12-r15) and the ctx pointer.
@@ -534,7 +553,7 @@ static bool checked_range(size_t offset, size_t size, size_t total) {
     return offset <= total && size <= total - offset;
 }
 
-#if ASMREPL_APPLE_ARM64
+#if ASMREPL_FORMAT_MACHO
 static bool extract_text_section(const char *object_path, code_blob_t *blob) {
     size_t file_size = 0;
     uint8_t *file = read_file(object_path, &file_size);
@@ -614,7 +633,7 @@ static bool extract_text_section(const char *object_path, code_blob_t *blob) {
     free(file);
     return false;
 }
-#elif ASMREPL_LINUX_X86_64
+#elif ASMREPL_FORMAT_ELF
 static bool extract_text_section(const char *object_path, code_blob_t *blob) {
     size_t file_size = 0;
     uint8_t *file = read_file(object_path, &file_size);
@@ -639,10 +658,17 @@ static bool extract_text_section(const char *object_path, code_blob_t *blob) {
         free(file);
         return false;
     }
+#if ASMREPL_ARCH_X86_64
     if (ehdr->e_machine != EM_X86_64) {
         fprintf(stderr, "object file is not x86_64\n");
         free(file);
         return false;
+#elif ASMREPL_ARCH_ARM64
+    if (ehdr->e_machine != EM_AARCH64) {
+        fprintf(stderr, "object file is not aarch64\n");
+        free(file);
+        return false;
+#endif
     }
     if (ehdr->e_shoff == 0 || ehdr->e_shentsize != sizeof(Elf64_Shdr) || ehdr->e_shnum == 0) {
         fprintf(stderr, "ELF object has no section headers\n");
@@ -726,7 +752,12 @@ static bool assemble_line(const char *line, const char *definitions, unsigned lo
         "clang", "-c", "-arch", "arm64",
         asm_path, "-o", obj_path, NULL,
     };
-#elif ASMREPL_LINUX_X86_64
+#elif ASMREPL_APPLE_X86_64
+    char *const argv[] = {
+        "clang", "-c", "-arch", "x86_64",
+        asm_path, "-o", obj_path, NULL,
+    };
+#else /* Linux: native object format, no -arch needed */
     char *const argv[] = {
         "clang", "-c",
         asm_path, "-o", obj_path, NULL,
@@ -760,6 +791,8 @@ static bool execute_blob(const code_blob_t *blob, reg_context_t *ctx) {
 
 #if ASMREPL_APPLE_ARM64
     sys_icache_invalidate(mem, blob->size);
+#elif ASMREPL_LINUX_ARM64
+    __builtin___clear_cache((char *)mem, (char *)mem + blob->size);
 #endif
     /* On x86_64 the icache is coherent with stores, no flush needed. */
 
@@ -824,15 +857,21 @@ int main(void) {
     bool in_block = false;
 
 #if ASMREPL_APPLE_ARM64
-    puts("arm64 native assembly REPL. Type :help for commands.");
-    printf("scratch: x19 = 0x%016llx, x20 = %d bytes\n",
-           (unsigned long long)(uintptr_t)scratch,
-           SCRATCH_SIZE);
+    const char *banner = "arm64 native assembly REPL (macOS).";
+#elif ASMREPL_APPLE_X86_64
+    const char *banner = "x86_64 native assembly REPL (macOS). Intel syntax.";
+#elif ASMREPL_LINUX_ARM64
+    const char *banner = "arm64 native assembly REPL (Linux).";
 #elif ASMREPL_LINUX_X86_64
-    puts("x86_64 native assembly REPL (Linux). Intel syntax. Type :help for commands.");
+    const char *banner = "x86_64 native assembly REPL (Linux). Intel syntax.";
+#endif
+    printf("%s Type :help for commands.\n", banner);
+#if ASMREPL_ARCH_ARM64
+    printf("scratch: x19 = 0x%016llx, x20 = %d bytes\n",
+           (unsigned long long)(uintptr_t)scratch, SCRATCH_SIZE);
+#elif ASMREPL_ARCH_X86_64
     printf("scratch: r15 = 0x%016llx, r14 = %d bytes\n",
-           (unsigned long long)(uintptr_t)scratch,
-           SCRATCH_SIZE);
+           (unsigned long long)(uintptr_t)scratch, SCRATCH_SIZE);
 #endif
 
     char input[MAX_INPUT];
