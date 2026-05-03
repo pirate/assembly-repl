@@ -1,6 +1,6 @@
 # assembly-repl 🧪
 
-An intentionally unsafe native ARM64 assembly REPL for Apple Silicon macOS.
+A native ARM64 assembly REPL (for Apple Silicon macOS only at the moment).
 
 Type assembly, run it directly on the CPU, and immediately see the register
 state that came back. You can enter single instructions or define normal
