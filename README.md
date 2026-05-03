@@ -1,7 +1,8 @@
 # assembly-repl 🧪
 
-A native assembly REPL. Targets Apple Silicon macOS (`arm64`) and Linux
-(`x86_64`).
+A native assembly REPL. The package ships prebuilt binaries for macOS
+(`arm64`) and Linux (`x86_64`, `arm64`); `npm install` picks the right
+one for your machine automatically.
 
 Type assembly, run it directly on the CPU, and immediately see the register
 state that came back. You can enter single instructions or define normal
@@ -23,27 +24,24 @@ jump into nonsense, it will probably do exactly that. 🔥
 - Persists labels, directives, and routines between executions
 - Prints registers and arithmetic flags after each instruction
 
-On macOS arm64 the REPL starts with `x19` pointing at a writable scratch page
-and `x20` holding the scratch page size.
+The REPL exposes a writable scratch page in a callee-saved register so you
+can use it like a tiny heap. The register depends on the architecture:
 
-On Linux x86_64 the REPL uses Intel syntax, starts with `r15` pointing at the
-scratch page and `r14` holding the scratch page size.
+| arch   | scratch ptr | scratch size | syntax         |
+|--------|-------------|--------------|----------------|
+| arm64  | `x19`       | `x20`        | ARM64 (AT&T)   |
+| x86_64 | `r15`       | `r14`        | Intel (no-prefix) |
 
 ## Requirements
 
-macOS:
-- Apple Silicon Mac
-- `clang` at runtime (Apple Clang)
-
-Linux:
-- x86_64 host
-- `clang` at runtime
-- `make` only if building from source
+- `clang` at runtime (the REPL shells out to it for each line)
+- `make` only if building from source on a platform without a prebuild
 
 ## Install 🚀
 
-The npm package bundles prebuilt binaries for `darwin-arm64` and `linux-x64`.
-Installing it does not run `node-gyp`, `make`, or a native build.
+The npm package bundles prebuilt binaries for `darwin-arm64`, `linux-x64`,
+and `linux-arm64`. Installing it does not run `node-gyp`, `make`, or a
+native build.
 
 Run without installing globally:
 
@@ -82,10 +80,12 @@ make clean
 
 ## Quick Start ✨
 
-macOS arm64:
+The remainder of the README uses ARM64 syntax. The same ideas apply to
+x86_64 — the equivalents are listed once in the *x86_64 Cheat Sheet*
+section near the bottom; everything else is shared.
 
 ```text
-arm64 native assembly REPL. Type :help for commands.
+arm64 native assembly REPL (macOS). Type :help for commands.
 scratch: x19 = 0x0000000100abc000, x20 = 4096 bytes
 asm> mov x0, #41
 x0  0x0000000000000029  ...
@@ -97,25 +97,42 @@ asm> cmp x0, #42
 nzcv 0x0000000060000000 [nZCv]
 ```
 
-Linux x86_64 (Intel syntax):
+## x86_64 Cheat Sheet 🧷
+
+The rest of this README uses ARM64. The mapping for x86_64 is small enough
+to live in one place — once you know it, every other example translates
+mechanically.
+
+| concept                | arm64                             | x86_64 (Intel syntax)            |
+|------------------------|-----------------------------------|----------------------------------|
+| immediate move         | `mov x0, #41`                     | `mov rax, 41`                    |
+| add                    | `add x0, x0, #1`                  | `add rax, 1`                     |
+| compare                | `cmp x0, #42`                     | `cmp rax, 42`                    |
+| store / load (scratch) | `str x0, [x19]` / `ldr x1, [x19]` | `mov [r15], rax` / `mov rcx, [r15]` |
+| call routine           | `bl square`                       | `call square`                    |
+| return                 | `ret`                             | `ret`                            |
+| flags shown            | `NZCV`                            | `OSZAPC`                         |
+| scratch ptr / size     | `x19` / `x20`                     | `r15` / `r14`                    |
+
+Two short x86_64 examples — register persistence and a routine call:
 
 ```text
-x86_64 native assembly REPL (Linux). Intel syntax. Type :help for commands.
-scratch: r15 = 0x00007f9c1c0fe000, r14 = 4096 bytes
-asm> mov rax, 41
-rax 0x0000000000000029  ...
+asm> mov rax, 10
+asm> mov rcx, 32
+asm> add rax, rcx        # rax = 42
 
-asm> add rax, 1
-rax 0x000000000000002a  ...
-
-asm> cmp rax, 42
-rflags 0x0000000000000246 [osZaPc]
+asm> square:
+asm|   imul rdi, rdi
+asm|   mov rax, rdi
+asm|   ret
+asm> mov rdi, 12
+asm> call square         # rax = 144
 ```
 
-The arithmetic flag legend on Linux is `OSZAPC` (overflow, sign, zero, aux,
-parity, carry), uppercase when set, lowercase when clear.
+For a complete x86_64 demo see *Demo: Linux Syscalls* below, including a
+working real-time scheduling switch.
 
-## Example: Registers 🧠
+## Example: Registers 🧠 (arm64)
 
 Registers persist between lines:
 
@@ -127,7 +144,7 @@ asm> add x2, x0, x1
 
 After the final line, `x2` contains `42`.
 
-## Example: Scratch Memory 🧰
+## Example: Scratch Memory 🧰 (arm64)
 
 `x19` points at a writable scratch page:
 
