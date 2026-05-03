@@ -579,6 +579,51 @@ bl exit_demo
 
 Run this one last. It does exactly what it says.
 
+### execve
+
+This calls `execve("/bin/bash", argv, NULL)` and replaces the REPL process with
+Bash. The `argv` array is built in scratch memory at `x19`.
+
+```asm
+exec_bash_demo:
+  adr x0, bash_path
+
+  adr x3, bash_path
+  str x3, [x19]
+  adr x3, bash_arg_c
+  str x3, [x19, #8]
+  adr x3, bash_script
+  str x3, [x19, #16]
+  str xzr, [x19, #24]
+
+  mov x1, x19
+  mov x2, #0
+  movz x16, #59
+  movk x16, #0x200, lsl #16
+  svc #0x80
+  ret
+
+bash_path:
+  .asciz "/bin/bash"
+
+bash_arg_c:
+  .asciz "-c"
+
+bash_script:
+  .asciz "echo hello from assembly exec; uname -m"
+
+bl exec_bash_demo
+```
+
+Expected output:
+
+```text
+hello from assembly exec
+arm64
+```
+
+Like `exit`, this replaces the REPL process. Run it last.
+
 ## Demo: Crash-As-A-Lesson Mode 💥
 
 This REPL is intentionally unsafe. You can use that to learn why valid memory,
