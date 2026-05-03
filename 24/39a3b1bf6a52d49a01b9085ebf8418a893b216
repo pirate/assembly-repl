@@ -1,0 +1,25 @@
+package.json
+  cca77dd82724de47 1-46
+README.md
+  cca77dd82724de47 29-30,34-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "2439a3b1bf6a52d49a01b9085ebf8418a893b216",
+  "prompts": {
+    "cca77dd82724de47": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de76f-9b9b-7e30-87bb-c90e942465a4",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 185,
+      "total_deletions": 39,
+      "accepted_lines": 149,
+      "overriden_lines": 0
+    }
+  }
+}
