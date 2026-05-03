@@ -182,6 +182,47 @@ static char *trim(char *line) {
     return line;
 }
 
+static void rtrim_in_place(char *line) {
+    size_t len = strlen(line);
+    while (len > 0) {
+        char c = line[len - 1];
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+            break;
+        }
+        line[--len] = '\0';
+    }
+}
+
+static void strip_asm_inline_comment(char *line) {
+    bool in_single = false;
+    bool in_double = false;
+    bool escaped = false;
+
+    for (char *p = line; *p; p++) {
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (*p == '\\' && (in_single || in_double)) {
+            escaped = true;
+            continue;
+        }
+        if (*p == '\'' && !in_double) {
+            in_single = !in_single;
+            continue;
+        }
+        if (*p == '"' && !in_single) {
+            in_double = !in_double;
+            continue;
+        }
+        if (!in_single && !in_double && p[0] == '/' && p[1] == '/') {
+            *p = '\0';
+            rtrim_in_place(line);
+            return;
+        }
+    }
+}
+
 static bool starts_indented(const char *line) {
     return line[0] == ' ' || line[0] == '\t';
 }
@@ -1182,7 +1223,11 @@ int main(void) {
             raw_line[--raw_len] = '\0';
         }
 
-        char *line = trim(input);
+        char code_line[MAX_INPUT];
+        snprintf(code_line, sizeof(code_line), "%s", raw_line);
+        strip_asm_inline_comment(code_line);
+
+        char *line = trim(code_line);
         if (*line == '\0') {
             if (in_block) {
                 text_buffer_append_line(&block, "");
@@ -1190,7 +1235,7 @@ int main(void) {
             continue;
         }
 
-        if (in_block && !starts_indented(raw_line)) {
+        if (in_block && !starts_indented(code_line)) {
             commit_definition_block(&definitions, &block);
             in_block = false;
         }
@@ -1268,18 +1313,18 @@ int main(void) {
         }
 
         if (in_block) {
-            text_buffer_append_line(&block, raw_line);
+            text_buffer_append_line(&block, code_line);
             continue;
         }
 
-        if (is_definition_start(raw_line)) {
-            text_buffer_append_line(&block, raw_line);
+        if (is_definition_start(code_line)) {
+            text_buffer_append_line(&block, code_line);
             in_block = true;
             continue;
         }
 
-        if (is_directive(raw_line)) {
-            text_buffer_append_line(&definitions, raw_line);
+        if (is_directive(code_line)) {
+            text_buffer_append_line(&definitions, code_line);
             continue;
         }
 

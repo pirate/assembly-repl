@@ -158,6 +158,56 @@ static char *trim(char *line) {
     return line;
 }
 
+static void rtrim_in_place(char *line) {
+    size_t len = strlen(line);
+    while (len > 0) {
+        char c = line[len - 1];
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+            break;
+        }
+        line[--len] = '\0';
+    }
+}
+
+static bool strip_repl_inline_comment(repl_mode_t mode, char *line) {
+    bool in_single = false;
+    bool in_double = false;
+    bool escaped = false;
+
+    for (char *p = line; *p; p++) {
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (*p == '\\' && (in_single || in_double)) {
+            escaped = true;
+            continue;
+        }
+        if (*p == '\'' && !in_double) {
+            in_single = !in_single;
+            continue;
+        }
+        if (*p == '"' && !in_single) {
+            in_double = !in_double;
+            continue;
+        }
+        if (in_single || in_double) {
+            continue;
+        }
+        if (p[0] == '/' && p[1] == '/') {
+            *p = '\0';
+            rtrim_in_place(line);
+            return true;
+        }
+        if (mode == MODE_LLVMIR && *p == ';') {
+            *p = '\0';
+            rtrim_in_place(line);
+            return true;
+        }
+    }
+    return false;
+}
+
 static const char *mode_name(repl_mode_t mode) {
     switch (mode) {
         case MODE_C: return "c";
@@ -1569,10 +1619,16 @@ int main(int argc, char **argv) {
             raw_line[--raw_len] = '\0';
         }
 
-        char *line = trim(input);
+        char code_line[REPL_MAX_INPUT];
+        snprintf(code_line, sizeof(code_line), "%s", raw_line);
+        bool stripped_comment = strip_repl_inline_comment(mode, code_line);
+
+        char *line = trim(code_line);
         if (*line == '\0') {
             if (in_def_block) {
                 text_buffer_append_line(&block, "");
+            } else if (stripped_comment && mode_is_statement_repl(mode) && pending_statement.len > 0) {
+                continue;
             } else if (mode_is_statement_repl(mode) && pending_statement.len > 0) {
                 finish_pending_statement(mode, &definitions, &pending_statement, &serial,
                                          &state, last_source, sizeof(last_source), true);
@@ -1703,30 +1759,30 @@ int main(int argc, char **argv) {
         }
 
         if (in_def_block) {
-            text_buffer_append_line(&block, raw_line);
+            text_buffer_append_line(&block, code_line);
             continue;
         }
 
-        if (starts_with_preprocessor_directive(raw_line) && mode_is_statement_repl(mode) &&
+        if (starts_with_preprocessor_directive(code_line) && mode_is_statement_repl(mode) &&
             pending_statement.len == 0) {
-            text_buffer_append_line(&definitions, raw_line);
+            text_buffer_append_line(&definitions, code_line);
             puts("directive persisted");
             continue;
         }
 
         if (mode_is_statement_repl(mode)) {
-            text_buffer_append_line(&pending_statement, raw_line);
+            text_buffer_append_line(&pending_statement, code_line);
             finish_pending_statement(mode, &definitions, &pending_statement, &serial,
                                      &state, last_source, sizeof(last_source), false);
         } else if (mode == MODE_LLVMIR) {
-            text_buffer_append_line(&ir_body, raw_line);
+            text_buffer_append_line(&ir_body, code_line);
             if (build_and_run_llvm(definitions.data, ir_body.data, serial++, &state,
                                    last_source, sizeof(last_source))) {
                 print_state(&state);
             } else {
-                size_t raw_line_len = strlen(raw_line);
-                if (ir_body.len >= raw_line_len + 1) {
-                    ir_body.len -= raw_line_len + 1;
+                size_t code_line_len = strlen(code_line);
+                if (ir_body.len >= code_line_len + 1) {
+                    ir_body.len -= code_line_len + 1;
                     ir_body.data[ir_body.len] = '\0';
                 }
             }
