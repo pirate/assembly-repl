@@ -205,31 +205,26 @@ This computes:
 Paste this into `assembly-repl`:
 
 ```asm
-.globl _calc_add              // Export the add routine label.
-.globl _calc_mul              // Export the multiply routine label.
-.globl _calculator_demo       // Export the demo routine label.
-.p2align 2                    // Align the following functions.
-
-_calc_add:                    // x0 = x0 + x1.
+calc_add:                     // x0 = x0 + x1.
   add x0, x0, x1              // Add the two input registers.
   ret                         // Return with the sum in x0.
 
-_calc_mul:                    // x0 = x0 * x1.
+calc_mul:                     // x0 = x0 * x1.
   mul x0, x0, x1              // Multiply the two input registers.
   ret                         // Return with the product in x0.
 
-_calculator_demo:             // Compute (7 + 35) * 2.
+calculator_demo:              // Compute (7 + 35) * 2.
   stp x29, x30, [sp, #-16]!   // Save frame pointer and link register.
   mov x29, sp                 // Establish a frame pointer.
   mov x0, #7                  // First add input.
   mov x1, #35                 // Second add input.
-  bl _calc_add                // x0 becomes 42.
+  bl calc_add                 // x0 becomes 42.
   mov x1, #2                  // Set the multiply input.
-  bl _calc_mul                // x0 becomes 84.
+  bl calc_mul                 // x0 becomes 84.
   ldp x29, x30, [sp], #16     // Restore frame pointer and link register.
   ret                         // Return to the caller.
 
-bl _calculator_demo           // Run the calculator demo.
+bl calculator_demo            // Run the calculator demo.
 ```
 
 The result is left in `x0` as `0x54`, decimal `84`.

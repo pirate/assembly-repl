@@ -1,7 +1,7 @@
 {
   "name": "assembly-repl",
-  "version": "0.1.0",
-  "description": "Unsafe native assembly REPL for macOS and Linux on arm64 and x86_64",
+  "version": "0.1.1",
+  "description": "Native raw assembly, LLVM IR, C, C++, and Objective C REPLs for macOS and Linux",
   "license": "MIT",
   "homepage": "https://github.com/pirate/assembly-repl#readme",
   "repository": {
