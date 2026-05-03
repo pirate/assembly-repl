@@ -131,7 +131,7 @@ commands, and instruction help syntax.
 
 ### `assembly-repl`: Examples
 
-<details><summary><h4>`assembly-repl`: Basics</h4></summary>
+<details><summary><h4><code>assembly-repl</code>: Basics</h4></summary>
 
 Registers persist between lines:
 
@@ -152,7 +152,7 @@ nzcv 0x0000000060000000 [nZCv]
 
 </details>
 
-<details><summary><h4>`assembly-repl`: Making a System Call</h4></summary>
+<details><summary><h4><code>assembly-repl</code>: Making a System Call</h4></summary>
 
 The raw syscall instruction and registers depend on the OS and architecture.
 These examples call `getpid` and leave the pid in the normal return register.
@@ -181,7 +181,7 @@ syscall
 
 </details>
 
-<details><summary><h4>`assembly-repl`: Defining a Reusable Routine</h4></summary>
+<details><summary><h4><code>assembly-repl</code>: Defining a Reusable Routine</h4></summary>
 
 Directives at column 0 are persisted immediately. Labels at column 0 start
 persistent definition blocks. Indented lines belong to the current block. When
@@ -204,7 +204,7 @@ to the generated REPL wrapper.
 
 </details>
 
-<details><summary><h4>`assembly-repl`: Full Calculator</h4></summary>
+<details><summary><h4><code>assembly-repl</code>: Full Calculator</h4></summary>
 
 This computes:
 
@@ -246,9 +246,7 @@ The result is left in `x0` as `0x54`, decimal `84`.
 
 </details>
 
-### `assembly-repl`: Reference
-
-#### `assembly-repl`: ARM64 To x86_64 Cheat Sheet 🧷
+<details><summary><h4><code>assembly-repl</code>: ARM64 To x86_64 Cheat Sheet 🧷</h4></summary>
 
 This section is only for `assembly-repl` on x86_64. The REPL uses Intel syntax
 without `%` register prefixes.
@@ -282,105 +280,9 @@ asm> call square         # rax = 144
 For a complete x86_64 demo see *`assembly-repl`: x86_64 Linux Syscalls* below,
 including a working real-time scheduling switch.
 
-#### `assembly-repl`: Commands 🕹️
+</details>
 
-- `:help` shows commands and notes
-- `:help <instruction>` shows built-in help for an instruction
-- `:instructions` lists instruction help topics for the current architecture
-- `:regs` prints the current register context
-- `:reset` zeroes registers and restores scratch pointers
-- `:scratch` prints the scratch memory address and size
-- `:defs` prints persisted labels, directives, and routines
-- `:clear` clears persisted labels, directives, and routines
-- `:quit` exits
-
-You can also add `?` after an instruction mnemonic to show help without
-executing anything:
-
-```text
-asm> mov?
-asm> ldr?
-asm> add x0, x0, #1?
-```
-
-Short aliases:
-
-- `:h` for `:help`
-- `:inst` or `:i` for `:instructions`
-- `:r` for `:regs`
-- `:q` for `:quit`
-
-#### `assembly-repl`: How It Works 🛠️
-
-For each executable input, the REPL writes a tiny wrapper assembly file into
-`.repl-build/`, like this conceptually:
-
-```asm
-_asmrepl_entry:
-  ; save host registers the C ABI cares about
-  ; load persisted user registers from reg_context_t
-
-  <your instruction here>
-
-  ; store user registers and NZCV flags back into reg_context_t
-  ; restore host registers
-  ret
-
-  ; persisted labels/directives/routines live down here
-  _some_routine:
-    ret
-```
-
-Then it runs:
-
-```sh
-clang -c -arch arm64 .repl-build/line-N.s -o .repl-build/line-N.o
-```
-
-The C code extracts the `__TEXT,__text` bytes from that object file, maps them
-with `mmap`, flips the mapping to executable with `mprotect`, clears the
-instruction cache, and calls the resulting function pointer.
-
-#### `assembly-repl`: Sharp Edges ⚠️
-
-This program runs native instructions in the current process.
-
-Things that may crash or hang the REPL:
-
-- Unbalanced changes to `sp`
-- Branching away from the generated wrapper
-- Calling arbitrary addresses
-- Infinite loops
-- Invalid loads or stores
-- Trap instructions
-- Overwriting process memory
-
-That is intentional. The goal is to keep the tool small, direct, and useful for
-learning what instructions actually do.
-
-#### `assembly-repl`: Debugging With LLDB 🔎
-
-You can run the REPL under LLDB if you want a real debugger around the process:
-
-```sh
-lldb ./asmrepl
-(lldb) run
-```
-
-Once stopped at a crash or breakpoint:
-
-```text
-(lldb) register read
-(lldb) bt
-(lldb) disassemble --pc
-```
-
-The built-in register dump is usually enough for simple instruction-level
-learning, but LLDB is useful when you intentionally try dangerous instructions.
-
-### `assembly-repl`: Additional Examples
-
-#### `assembly-repl`: ARM64 Registers 🧠
+<details><summary><h4><code>assembly-repl</code>: ARM64 Registers 🧠</h4></summary>
 
 Registers persist between lines:
 
@@ -392,7 +294,9 @@ asm> add x2, x0, x1
 
 After the final line, `x2` contains `42`.
 
-#### `assembly-repl`: ARM64 Scratch Memory 🧰
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Scratch Memory 🧰</h4></summary>
 
 `x19` points at a writable scratch page:
 
@@ -412,7 +316,9 @@ asm> str x0, [x19, #8]
 asm> ldr x2, [x19, #8]
 ```
 
-#### `assembly-repl`: ARM64 Flags Explorer 🚩
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Flags Explorer 🚩</h4></summary>
 
 Use `cmp`, `adds`, and `subs` to watch the `NZCV` flags change.
 
@@ -431,7 +337,9 @@ subs x1, x0, #10
 
 This leaves a negative result in `x1`, so the `N` flag is set.
 
-#### `assembly-repl`: ARM64 Calling Convention Lab 🧠
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Calling Convention Lab 🧠</h4></summary>
 
 Apple ARM64 passes the first integer arguments in `x0`, `x1`, `x2`, and so on.
 Return values come back in `x0`.
@@ -447,7 +355,9 @@ bl square
 
 After the call, `x0` contains `144`.
 
-#### `assembly-repl`: ARM64 Manual Stack Frames 🧱
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Manual Stack Frames 🧱</h4></summary>
 
 This routine uses a conventional frame pointer and return-address save/restore.
 
@@ -465,7 +375,9 @@ bl increment_with_frame
 
 Watch `sp`, `x29`, and `x30` in the register dump to see the call machinery.
 
-#### `assembly-repl`: ARM64 Pointer Arithmetic With Live Memory 🧰
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Pointer Arithmetic With Live Memory 🧰</h4></summary>
 
 `x19` points at a writable scratch page. Use it like a tiny heap.
 
@@ -481,7 +393,9 @@ add x3, x1, x2
 
 After the final line, `x3` contains `30`.
 
-#### `assembly-repl`: ARM64 Tiny Virtual Machine 🎛️
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Tiny Virtual Machine 🎛️</h4></summary>
 
 Store a tiny instruction stream in scratch memory, then interpret it with native
 assembly.
@@ -533,7 +447,9 @@ bl run_tiny_vm
 
 The bytecode computes `(0 + 7 + 35) * 2`, so `x0` ends as `84`.
 
-#### `assembly-repl`: ARM64 Recursive Assembly 🌀
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Recursive Assembly 🌀</h4></summary>
 
 Recursion works as long as you preserve the link register and any values you
 need after recursive calls.
@@ -562,7 +478,9 @@ bl factorial
 
 After the call, `x0` contains `120`.
 
-#### `assembly-repl`: ARM64 Conditional Branches 🛣️
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Conditional Branches 🛣️</h4></summary>
 
 Build small control-flow routines and call them with different inputs.
 
@@ -581,7 +499,9 @@ bl max
 
 After the call, `x0` contains the larger value.
 
-#### `assembly-repl`: ARM64 Self-Contained Function Library 📚
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Self-Contained Function Library 📚</h4></summary>
 
 Use the REPL like a live assembly notebook. Define a few reusable routines, then
 compose them interactively.
@@ -609,7 +529,9 @@ bl clamp_min
 
 `add3` produces `35`; `clamp_min` then raises that to `40`.
 
-#### `assembly-repl`: ARM64 Instruction Equivalence ⚖️
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 Instruction Equivalence ⚖️</h4></summary>
 
 Some instructions produce the same register result but differ in side effects.
 
@@ -628,7 +550,9 @@ adds x0, x0, #1
 
 Both versions leave `x0` as `42`, but only `adds` updates `NZCV`.
 
-#### `assembly-repl`: ARM64 macOS Syscalls 🧬
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: ARM64 macOS Syscalls 🧬</h4></summary>
 
 On macOS ARM64, a Unix syscall uses this basic convention:
 
@@ -642,7 +566,7 @@ On macOS ARM64, a Unix syscall uses this basic convention:
 The examples below use `movz` + `movk` to build syscall numbers like
 `0x2000005`, because those constants are too large for a single `mov` immediate.
 
-##### open
+#### open
 
 This calls `open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644)`. The returned file
 descriptor is left in `x0`.
@@ -665,7 +589,7 @@ bl open_demo
 
 The flags are `O_WRONLY` (`0x1`), `O_CREAT` (`0x200`), and `O_TRUNC` (`0x400`).
 
-##### mmap
+#### mmap
 
 This calls `mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON,
 -1, 0)`, writes `42` into the returned mapping, and loads it back into `x2`.
@@ -692,7 +616,7 @@ bl mmap_demo
 
 After the call, `x21` contains the mapped address and `x2` contains `42`.
 
-##### fork
+#### fork
 
 This calls `fork()`. On Darwin, the parent returns with the child pid in `x0`
 and `x1 = 0`; the child returns with `x1 = 1`. The child immediately calls
@@ -716,7 +640,7 @@ fork_child:
 bl fork_demo
 ```
 
-##### exit
+#### exit
 
 This terminates the REPL process with exit status `42`.
 
@@ -733,7 +657,7 @@ bl exit_demo
 
 Run this one last. It does exactly what it says.
 
-##### execve
+#### execve
 
 This calls `execve("/bin/bash", argv, NULL)` and replaces the REPL process with
 Bash. The `argv` array is built in scratch memory at `x19`.
@@ -778,7 +702,9 @@ arm64
 
 Like `exit`, this replaces the REPL process. Run it last.
 
-#### `assembly-repl`: x86_64 Linux Syscalls 🐧
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: x86_64 Linux Syscalls 🐧</h4></summary>
 
 On Linux x86_64 the syscall convention is:
 
@@ -797,7 +723,7 @@ syscall
 
 After the call, `rax` contains the REPL's pid.
 
-##### Real-time scheduling: SCHED_FIFO
+#### Real-time scheduling: SCHED_FIFO
 
 Linux lets you switch a process to real-time scheduling with one syscall:
 `sched_setscheduler(pid, policy, &param)` (syscall `144`). With `policy =
@@ -850,7 +776,9 @@ pid 9228's current scheduling priority: 50
 To go back to normal scheduling, repeat the call with `policy = 0`
 (`SCHED_OTHER`) and `priority = 0`.
 
-#### `assembly-repl`: Crash-As-A-Lesson Mode 💥
+</details>
+
+<details><summary><h4><code>assembly-repl</code>: Crash-As-A-Lesson Mode 💥</h4></summary>
 
 This REPL is intentionally unsafe. You can use that to learn why valid memory,
 balanced stack changes, and correct return addresses matter.
@@ -870,6 +798,56 @@ sub sp, sp, #16
 
 Those failures are useful when you want to see what bad assembly does to a real
 process instead of an emulator.
+
+</details>
+
+### `assembly-repl`: Reference
+
+#### `assembly-repl`: Commands 🕹️
+
+- `:help` shows commands and notes
+- `:help <instruction>` shows built-in help for an instruction
+- `:instructions` lists instruction help topics for the current architecture
+- `:regs` prints the current register context
+- `:reset` zeroes registers and restores scratch pointers
+- `:scratch` prints the scratch memory address and size
+- `:defs` prints persisted labels, directives, and routines
+- `:clear` clears persisted labels, directives, and routines
+- `:quit` exits
+
+You can also add `?` after an instruction mnemonic to show help without
+executing anything:
+
+```text
+asm> mov?
+asm> ldr?
+asm> add x0, x0, #1?
+```
+
+Short aliases:
+
+- `:h` for `:help`
+- `:inst` or `:i` for `:instructions`
+- `:r` for `:regs`
+- `:q` for `:quit`
+
+#### `assembly-repl`: Sharp Edges ⚠️
+
+This program runs native instructions in the current process.
+
+Things that may crash or hang the REPL:
+
+- Unbalanced changes to `sp`
+- Branching away from the generated wrapper
+- Calling arbitrary addresses
+- Infinite loops
+- Invalid loads or stores
+- Trap instructions
+- Overwriting process memory
+
+That is intentional. The goal is to keep the tool small, direct, and useful for
+learning what instructions actually do.
+
 ## `llvmir-repl`
 
 `llvmir-repl` appends each non-command line to a generated LLVM IR function body,
@@ -889,36 +867,9 @@ ir> store i64 %x, ptr %result
 result 0x000000000000002a (42)
 ```
 
-### `llvmir-repl`: Reference
-
-Persistent state:
-
-```llvm
-%repl_state = type { [16 x i64], [16 x double], [4096 x i8], [4096 x i8], i64 }
-```
-
-Field 4 of `%repl_state` updates the printed result.
-
-Commands:
-
-- `:help` shows commands and execution notes
-- `:help <topic>` shows built-in help for a topic
-- `:topics` lists built-in topic help
-- `:instructions` discovers LLVM IR instructions from the installed LLVM/Clang
-  toolchain and prints small generated summaries
-- `:state` prints persistent slots, result, and output
-- `:reset` resets persistent state
-- `:scratch` prints scratch memory details
-- `:defs` prints persisted definitions
-- `:def` starts a persisted definition block
-- `:end` commits the current definition block
-- `:clear` clears definitions and LLVM IR body
-- `:source` prints the last generated IR file path
-- `:quit` exits
-
 ### `llvmir-repl`: Examples
 
-<details><summary><h4>`llvmir-repl`: Basics</h4></summary>
+<details><summary><h4><code>llvmir-repl</code>: Basics</h4></summary>
 
 Do inline integer arithmetic, then store into field 4 of `%repl_state` to update
 the printed result:
@@ -932,7 +883,7 @@ result 0x000000000000002a (42)
 
 </details>
 
-<details><summary><h4>`llvmir-repl`: Making a System Call</h4></summary>
+<details><summary><h4><code>llvmir-repl</code>: Making a System Call</h4></summary>
 
 This calls the platform C library's `getpid` entry point, avoiding OS-specific raw
 syscall numbers in the IR:
@@ -953,7 +904,7 @@ The exact process id will be different on your machine.
 
 </details>
 
-<details><summary><h4>`llvmir-repl`: Defining a Reusable Function</h4></summary>
+<details><summary><h4><code>llvmir-repl</code>: Defining a Reusable Function</h4></summary>
 
 ```text
 ir> :def
@@ -972,7 +923,7 @@ result 0x000000000000002a (42)
 
 </details>
 
-<details><summary><h4>`llvmir-repl`: Full Calculator</h4></summary>
+<details><summary><h4><code>llvmir-repl</code>: Full Calculator</h4></summary>
 
 This computes:
 
@@ -1003,6 +954,33 @@ result 0x0000000000000054 (84)
 
 </details>
 
+### `llvmir-repl`: Reference
+
+Persistent state:
+
+```llvm
+%repl_state = type { [16 x i64], [16 x double], [4096 x i8], [4096 x i8], i64 }
+```
+
+Field 4 of `%repl_state` updates the printed result.
+
+Commands:
+
+- `:help` shows commands and execution notes
+- `:help <topic>` shows built-in help for a topic
+- `:topics` lists built-in topic help
+- `:instructions` discovers LLVM IR instructions from the installed LLVM/Clang
+  toolchain and prints small generated summaries
+- `:state` prints persistent slots, result, and output
+- `:reset` resets persistent state
+- `:scratch` prints scratch memory details
+- `:defs` prints persisted definitions
+- `:def` starts a persisted definition block
+- `:end` commits the current definition block
+- `:clear` clears definitions and LLVM IR body
+- `:source` prints the last generated IR file path
+- `:quit` exits
+
 ## `c-repl`
 
 `c-repl` compiles each input as C inside:
@@ -1026,6 +1004,69 @@ c> :help
 c> U(0) = 40 + 2; state->result = U(0);
 result 0x000000000000002a (42)
 ```
+
+### `c-repl`: Examples
+
+<details><summary><h4><code>c-repl</code>: Basics</h4></summary>
+
+```text
+c> U(0) = 41;
+c> U(0) += 1; state->result = U(0);
+result 0x000000000000002a (42)
+```
+
+</details>
+
+<details><summary><h4><code>c-repl</code>: Making a System Call</h4></summary>
+
+```text
+c> #include <unistd.h>
+directive persisted
+c> state->result = (uint64_t)getpid();
+result 0x0000000000001234 (4660)
+```
+
+The exact process id will be different on your machine.
+
+</details>
+
+<details><summary><h4><code>c-repl</code>: Defining a Reusable Function</h4></summary>
+
+Top-level function definitions are persisted after the closing brace:
+
+```text
+c> static uint64_t twice(uint64_t x) {
+c|   return x * 2;
+c| }
+definition block committed
+c> state->result = twice(21);
+result 0x000000000000002a (42)
+```
+
+</details>
+
+<details><summary><h4><code>c-repl</code>: Full Calculator</h4></summary>
+
+This computes:
+
+```text
+(7 + 35) * 2 = 84
+```
+
+```text
+c> static uint64_t calc_add(uint64_t a, uint64_t b) {
+c|   return a + b;
+c| }
+definition block committed
+c> static uint64_t calc_mul(uint64_t a, uint64_t b) {
+c|   return a * b;
+c| }
+definition block committed
+c> state->result = calc_mul(calc_add(7, 35), 2);
+result 0x0000000000000054 (84)
+```
+
+</details>
 
 ### `c-repl`: Reference
 
@@ -1065,69 +1106,6 @@ Multi-line input is collected until the compiler accepts it. Accepted top-level
 definitions are persisted; accepted statements run inside `repl_entry`. Press
 Enter on an empty continuation line to force diagnostics.
 
-### `c-repl`: Examples
-
-<details><summary><h4>`c-repl`: Basics</h4></summary>
-
-```text
-c> U(0) = 41;
-c> U(0) += 1; state->result = U(0);
-result 0x000000000000002a (42)
-```
-
-</details>
-
-<details><summary><h4>`c-repl`: Making a System Call</h4></summary>
-
-```text
-c> #include <unistd.h>
-directive persisted
-c> state->result = (uint64_t)getpid();
-result 0x0000000000001234 (4660)
-```
-
-The exact process id will be different on your machine.
-
-</details>
-
-<details><summary><h4>`c-repl`: Defining a Reusable Function</h4></summary>
-
-Top-level function definitions are persisted after the closing brace:
-
-```text
-c> static uint64_t twice(uint64_t x) {
-c|   return x * 2;
-c| }
-definition block committed
-c> state->result = twice(21);
-result 0x000000000000002a (42)
-```
-
-</details>
-
-<details><summary><h4>`c-repl`: Full Calculator</h4></summary>
-
-This computes:
-
-```text
-(7 + 35) * 2 = 84
-```
-
-```text
-c> static uint64_t calc_add(uint64_t a, uint64_t b) {
-c|   return a + b;
-c| }
-definition block committed
-c> static uint64_t calc_mul(uint64_t a, uint64_t b) {
-c|   return a * b;
-c| }
-definition block committed
-c> state->result = calc_mul(calc_add(7, 35), 2);
-result 0x0000000000000054 (84)
-```
-
-</details>
-
 ## `cpp-repl`
 
 `cpp-repl` compiles snippets as C++20 with `clang++`. Use it for templates,
@@ -1143,6 +1121,76 @@ cpp> :help
 cpp> U(0) = 40 + 2; state->result = U(0);
 result 0x000000000000002a (42)
 ```
+
+### `cpp-repl`: Examples
+
+<details><summary><h4><code>cpp-repl</code>: Basics</h4></summary>
+
+```text
+cpp> U(0) = 40 + 2; state->result = U(0);
+result 0x000000000000002a (42)
+```
+
+Local lambdas work too:
+
+```text
+cpp> auto sq = [](uint64_t x) { return x * x; }; state->result = sq(12);
+result 0x0000000000000090 (144)
+```
+
+</details>
+
+<details><summary><h4><code>cpp-repl</code>: Making a System Call</h4></summary>
+
+```text
+cpp> #include <unistd.h>
+directive persisted
+cpp> state->result = static_cast<uint64_t>(::getpid());
+result 0x0000000000001234 (4660)
+```
+
+The exact process id will be different on your machine.
+
+</details>
+
+<details><summary><h4><code>cpp-repl</code>: Defining a Reusable Function</h4></summary>
+
+Top-level definitions work the same way:
+
+```text
+cpp> template <typename T>
+cpp| T triple(T x) {
+cpp|   return x * 3;
+cpp| }
+definition block committed
+cpp> state->result = triple<uint64_t>(14);
+result 0x000000000000002a (42)
+```
+
+</details>
+
+<details><summary><h4><code>cpp-repl</code>: Full Calculator</h4></summary>
+
+This computes:
+
+```text
+(7 + 35) * 2 = 84
+```
+
+```text
+cpp> static uint64_t calc_add(uint64_t a, uint64_t b) {
+cpp|   return a + b;
+cpp| }
+definition block committed
+cpp> static uint64_t calc_mul(uint64_t a, uint64_t b) {
+cpp|   return a * b;
+cpp| }
+definition block committed
+cpp> auto value = calc_mul(calc_add(7, 35), 2); state->result = value;
+result 0x0000000000000054 (84)
+```
+
+</details>
 
 ### `cpp-repl`: Reference
 
@@ -1182,76 +1230,6 @@ Multi-line input is collected until the compiler accepts it. Accepted top-level
 definitions are persisted; accepted statements run inside `repl_entry`. Press
 Enter on an empty continuation line to force diagnostics.
 
-### `cpp-repl`: Examples
-
-<details><summary><h4>`cpp-repl`: Basics</h4></summary>
-
-```text
-cpp> U(0) = 40 + 2; state->result = U(0);
-result 0x000000000000002a (42)
-```
-
-Local lambdas work too:
-
-```text
-cpp> auto sq = [](uint64_t x) { return x * x; }; state->result = sq(12);
-result 0x0000000000000090 (144)
-```
-
-</details>
-
-<details><summary><h4>`cpp-repl`: Making a System Call</h4></summary>
-
-```text
-cpp> #include <unistd.h>
-directive persisted
-cpp> state->result = static_cast<uint64_t>(::getpid());
-result 0x0000000000001234 (4660)
-```
-
-The exact process id will be different on your machine.
-
-</details>
-
-<details><summary><h4>`cpp-repl`: Defining a Reusable Function</h4></summary>
-
-Top-level definitions work the same way:
-
-```text
-cpp> template <typename T>
-cpp| T triple(T x) {
-cpp|   return x * 3;
-cpp| }
-definition block committed
-cpp> state->result = triple<uint64_t>(14);
-result 0x000000000000002a (42)
-```
-
-</details>
-
-<details><summary><h4>`cpp-repl`: Full Calculator</h4></summary>
-
-This computes:
-
-```text
-(7 + 35) * 2 = 84
-```
-
-```text
-cpp> static uint64_t calc_add(uint64_t a, uint64_t b) {
-cpp|   return a + b;
-cpp| }
-definition block committed
-cpp> static uint64_t calc_mul(uint64_t a, uint64_t b) {
-cpp|   return a * b;
-cpp| }
-definition block committed
-cpp> auto value = calc_mul(calc_add(7, 35), 2); state->result = value;
-result 0x0000000000000054 (84)
-```
-
-</details>
-
 ## `objc-repl`
 
 `objc-repl` compiles Objective-C snippets on macOS with Foundation available.
@@ -1268,6 +1246,82 @@ objc> :help
 objc> U(0) = 40 + 2; state->result = U(0);
 result 0x000000000000002a (42)
 ```
+
+### `objc-repl`: Examples
+
+<details><summary><h4><code>objc-repl</code>: Basics</h4></summary>
+
+```text
+objc> U(0) = 40 + 2; state->result = U(0);
+result 0x000000000000002a (42)
+```
+
+Foundation values work too:
+
+```text
+objc> NSString *s = @"hello"; state->result = [s length];
+result 0x0000000000000005 (5)
+```
+
+</details>
+
+<details><summary><h4><code>objc-repl</code>: Making a System Call</h4></summary>
+
+```text
+objc> #include <unistd.h>
+directive persisted
+objc> state->result = (uint64_t)getpid();
+result 0x0000000000001234 (4660)
+```
+
+The exact process id will be different on your machine.
+
+</details>
+
+<details><summary><h4><code>objc-repl</code>: Defining a Reusable Class</h4></summary>
+
+You can persist Objective-C classes by entering interface and implementation
+blocks:
+
+```text
+objc> @interface Counter : NSObject
+objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b;
+objc| @end
+definition block committed
+objc> @implementation Counter
+objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b { return a + b; }
+objc| @end
+definition block committed
+objc> Counter *c = [Counter new]; state->result = [c add:40 to:2];
+result 0x000000000000002a (42)
+```
+
+</details>
+
+<details><summary><h4><code>objc-repl</code>: Full Calculator</h4></summary>
+
+This computes:
+
+```text
+(7 + 35) * 2 = 84
+```
+
+```text
+objc> @interface Calculator : NSObject
+objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b;
+objc| - (uint64_t)multiply:(uint64_t)a by:(uint64_t)b;
+objc| @end
+definition block committed
+objc> @implementation Calculator
+objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b { return a + b; }
+objc| - (uint64_t)multiply:(uint64_t)a by:(uint64_t)b { return a * b; }
+objc| @end
+definition block committed
+objc> Calculator *calc = [Calculator new]; state->result = [calc multiply:[calc add:7 to:35] by:2];
+result 0x0000000000000054 (84)
+```
+
+</details>
 
 ### `objc-repl`: Reference
 
@@ -1307,86 +1361,115 @@ Multi-line input is collected until the compiler accepts it. Accepted top-level
 definitions are persisted; accepted statements run inside `repl_entry`. Press
 Enter on an empty continuation line to force diagnostics.
 
-### `objc-repl`: Examples
+## Runtime Internals 🛠️
 
-<details><summary><h4>`objc-repl`: Basics</h4></summary>
+### `assembly-repl`: How It Works
 
-```text
-objc> U(0) = 40 + 2; state->result = U(0);
-result 0x000000000000002a (42)
+For each executable input, the REPL writes a tiny wrapper assembly file into
+`.repl-build/`, like this conceptually:
+
+```asm
+_asmrepl_entry:
+  ; save host registers the C ABI cares about
+  ; load persisted user registers from reg_context_t
+
+  <your instruction here>
+
+  ; store user registers and NZCV flags back into reg_context_t
+  ; restore host registers
+  ret
+
+  ; persisted labels/directives/routines live down here
+  _some_routine:
+    ret
 ```
 
-Foundation values work too:
+Then it runs:
 
-```text
-objc> NSString *s = @"hello"; state->result = [s length];
-result 0x0000000000000005 (5)
+```sh
+clang -c -arch arm64 .repl-build/line-N.s -o .repl-build/line-N.o
 ```
 
-</details>
+The C code extracts the `__TEXT,__text` bytes from that object file, maps them
+with `mmap`, flips the mapping to executable with `mprotect`, clears the
+instruction cache, and calls the resulting function pointer.
 
-<details><summary><h4>`objc-repl`: Making a System Call</h4></summary>
+### C, C++, Objective-C, And LLVM IR REPLs
 
-```text
-objc> #include <unistd.h>
-directive persisted
-objc> state->result = (uint64_t)getpid();
-result 0x0000000000001234 (4660)
+The source-language REPLs share one native runner, `language-repl`. The public
+entrypoints (`c-repl`, `cpp-repl`, `objc-repl`, and `llvmir-repl`) are Node
+wrappers that choose a language mode and launch that native runner.
+
+Each accepted snippet is written into `.repl-build/`, compiled into a shared
+library with `clang` or `clang++`, loaded into the REPL process with `dlopen`,
+and called through a common `repl_entry` function. State lives in a persistent
+`repl_state_t` struct that is passed to each snippet.
+
+## Debugging With LLDB 🔎
+
+The built-in register and state dumps are usually enough for simple learning,
+but LLDB is useful when you intentionally try dangerous code or want to inspect
+the native runner process.
+
+The npm entrypoints are Node wrapper scripts. For native debugging, point LLDB at
+the native runner directly. From a source checkout after `make` or `pnpm build`:
+
+```sh
+lldb -- ./asmrepl
+lldb -- ./language-repl --mode c
+lldb -- ./language-repl --mode cpp
+lldb -- ./language-repl --mode objc
+lldb -- ./language-repl --mode llvmir
 ```
 
-The exact process id will be different on your machine.
+These correspond to:
 
-</details>
+| public command  | native LLDB target                  |
+|-----------------|-------------------------------------|
+| `assembly-repl` | `./asmrepl`                         |
+| `c-repl`        | `./language-repl --mode c`          |
+| `cpp-repl`      | `./language-repl --mode cpp`        |
+| `objc-repl`     | `./language-repl --mode objc`       |
+| `llvmir-repl`   | `./language-repl --mode llvmir`     |
 
-<details><summary><h4>`objc-repl`: Defining a Reusable Class</h4></summary>
-
-You can persist Objective-C classes by entering interface and implementation
-blocks:
-
-```text
-objc> @interface Counter : NSObject
-objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b;
-objc| @end
-definition block committed
-objc> @implementation Counter
-objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b { return a + b; }
-objc| @end
-definition block committed
-objc> Counter *c = [Counter new]; state->result = [c add:40 to:2];
-result 0x000000000000002a (42)
-```
-
-</details>
-
-<details><summary><h4>`objc-repl`: Full Calculator</h4></summary>
-
-This computes:
+Inside LLDB:
 
 ```text
-(7 + 35) * 2 = 84
+(lldb) run
+(lldb) register read
+(lldb) bt
+(lldb) disassemble --pc
 ```
 
-```text
-objc> @interface Calculator : NSObject
-objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b;
-objc| - (uint64_t)multiply:(uint64_t)a by:(uint64_t)b;
-objc| @end
-definition block committed
-objc> @implementation Calculator
-objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b { return a + b; }
-objc| - (uint64_t)multiply:(uint64_t)a by:(uint64_t)b { return a * b; }
-objc| @end
-definition block committed
-objc> Calculator *calc = [Calculator new]; state->result = [calc multiply:[calc add:7 to:35] by:2];
-result 0x0000000000000054 (84)
+To debug an installed npm package, point LLDB at the selected prebuilt native
+runner:
+
+```sh
+pkg="$(npm root -g)/assembly-repl"
+target="$(node -p '`${process.platform}-${process.arch}`')"
+
+lldb -- "$pkg/prebuilds/$target/assembly-repl"
+lldb -- "$pkg/prebuilds/$target/language-repl" --mode c
+lldb -- "$pkg/prebuilds/$target/language-repl" --mode cpp
+lldb -- "$pkg/prebuilds/$target/language-repl" --mode objc
+lldb -- "$pkg/prebuilds/$target/language-repl" --mode llvmir
 ```
 
-</details>
+On Linux, use `gdb` or `lldb` if installed; the native runner arguments are the
+same.
 
-## Build From Source 🛠️
+## Development 🛠️
+
+This section is for working on `assembly-repl` itself. Normal users should only
+need the install, runtime requirements, commands, examples, runtime internals,
+and debugging notes above.
+
+### Development Requirements
 
 - `make` only if building local native runners from source
 - Docker buildx if refreshing all packaged prebuilds with `pnpm build`
+
+### Refresh Packaged Prebuilds
 
 ```sh
 pnpm build
@@ -1395,6 +1478,8 @@ pnpm build
 This rebuilds the macOS arm64 native runners locally, rebuilds the Linux x64 and
 Linux arm64 native runners with Docker buildx, and vendors all of them into
 `prebuilds/`.
+
+### Local Native Build
 
 For a local-only native build:
 
