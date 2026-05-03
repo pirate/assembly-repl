@@ -257,3 +257,239 @@ x0  0x0000000000000054  ...
 The important pattern is that each operation follows the same small calling
 contract: put inputs in `x0` and `x1`, call the routine with `bl`, and read the
 result back from `x0`. The final `x0` value is `0x54`, which is decimal `84`.
+
+## Demo: Flags Explorer 🚩
+
+Use `cmp`, `adds`, and `subs` to watch the `NZCV` flags change.
+
+```asm
+mov x0, #-1
+adds x0, x0, #1
+```
+
+`adds` writes the arithmetic result to `x0` and updates flags. After adding
+`-1 + 1`, `x0` is zero and the `Z` flag is set.
+
+```asm
+mov x0, #5
+subs x1, x0, #10
+```
+
+This leaves a negative result in `x1`, so the `N` flag is set.
+
+## Demo: Calling Convention Lab 🧠
+
+Apple ARM64 passes the first integer arguments in `x0`, `x1`, `x2`, and so on.
+Return values come back in `x0`.
+
+```asm
+square:
+  mul x0, x0, x0
+  ret
+
+mov x0, #12
+bl square
+```
+
+After the call, `x0` contains `144`.
+
+## Demo: Manual Stack Frames 🧱
+
+This routine uses a conventional frame pointer and return-address save/restore.
+
+```asm
+increment_with_frame:
+  stp x29, x30, [sp, #-16]!
+  mov x29, sp
+  add x0, x0, #1
+  ldp x29, x30, [sp], #16
+  ret
+
+mov x0, #41
+bl increment_with_frame
+```
+
+Watch `sp`, `x29`, and `x30` in the register dump to see the call machinery.
+
+## Demo: Pointer Arithmetic With Live Memory 🧰
+
+`x19` points at a writable scratch page. Use it like a tiny heap.
+
+```asm
+mov x0, #10
+str x0, [x19]
+mov x0, #20
+str x0, [x19, #8]
+ldr x1, [x19]
+ldr x2, [x19, #8]
+add x3, x1, x2
+```
+
+After the final line, `x3` contains `30`.
+
+## Demo: Tiny Virtual Machine 🎛️
+
+Store a tiny instruction stream in scratch memory, then interpret it with native
+assembly.
+
+This toy bytecode format uses pairs of 64-bit words:
+
+- opcode `1`: add immediate
+- opcode `2`: multiply immediate
+- opcode `0`: halt
+
+```asm
+run_tiny_vm:
+  mov x1, x19
+  mov x0, #0
+vm_loop:
+  ldr x2, [x1], #8
+  cbz x2, vm_done
+  ldr x3, [x1], #8
+  cmp x2, #1
+  b.eq vm_add
+  cmp x2, #2
+  b.eq vm_mul
+  b vm_done
+vm_add:
+  add x0, x0, x3
+  b vm_loop
+vm_mul:
+  mul x0, x0, x3
+  b vm_loop
+vm_done:
+  ret
+
+mov x0, #1
+str x0, [x19]
+mov x0, #7
+str x0, [x19, #8]
+mov x0, #1
+str x0, [x19, #16]
+mov x0, #35
+str x0, [x19, #24]
+mov x0, #2
+str x0, [x19, #32]
+mov x0, #2
+str x0, [x19, #40]
+mov x0, #0
+str x0, [x19, #48]
+bl run_tiny_vm
+```
+
+The bytecode computes `(0 + 7 + 35) * 2`, so `x0` ends as `84`.
+
+## Demo: Recursive Assembly 🌀
+
+Recursion works as long as you preserve the link register and any values you
+need after recursive calls.
+
+```asm
+factorial:
+  stp x29, x30, [sp, #-32]!
+  mov x29, sp
+  str x0, [sp, #16]
+  cmp x0, #1
+  b.le factorial_base
+  sub x0, x0, #1
+  bl factorial
+  ldr x1, [sp, #16]
+  mul x0, x0, x1
+  b factorial_done
+factorial_base:
+  mov x0, #1
+factorial_done:
+  ldp x29, x30, [sp], #32
+  ret
+
+mov x0, #5
+bl factorial
+```
+
+After the call, `x0` contains `120`.
+
+## Demo: Conditional Branches 🛣️
+
+Build small control-flow routines and call them with different inputs.
+
+```asm
+max:
+  cmp x0, x1
+  b.ge max_done
+  mov x0, x1
+max_done:
+  ret
+
+mov x0, #17
+mov x1, #42
+bl max
+```
+
+After the call, `x0` contains the larger value.
+
+## Demo: Self-Contained Function Library 📚
+
+Use the REPL like a live assembly notebook. Define a few reusable routines, then
+compose them interactively.
+
+```asm
+add3:
+  add x0, x0, x1
+  add x0, x0, x2
+  ret
+
+clamp_min:
+  cmp x0, x1
+  b.ge clamp_min_done
+  mov x0, x1
+clamp_min_done:
+  ret
+
+mov x0, #5
+mov x1, #10
+mov x2, #20
+bl add3
+mov x1, #40
+bl clamp_min
+```
+
+`add3` produces `35`; `clamp_min` then raises that to `40`.
+
+## Demo: Instruction Equivalence ⚖️
+
+Some instructions produce the same register result but differ in side effects.
+
+```asm
+mov x0, #41
+add x0, x0, #1
+```
+
+Now reset and try the flag-setting form:
+
+```asm
+:reset
+mov x0, #41
+adds x0, x0, #1
+```
+
+Both versions leave `x0` as `42`, but only `adds` updates `NZCV`.
+
+## Demo: Crash-As-A-Lesson Mode 💥
+
+This REPL is intentionally unsafe. You can use that to learn why valid memory,
+balanced stack changes, and correct return addresses matter.
+
+This may crash the REPL:
+
+```asm
+ldr x0, [xzr]
+```
+
+So can this:
+
+```asm
+sub sp, sp, #16
+```
+
+Those failures are useful when you want to see what bad assembly does to a real
+process instead of an emulator.
