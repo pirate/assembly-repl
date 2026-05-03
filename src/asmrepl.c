@@ -1,7 +1,8 @@
+#define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 
 #include <errno.h>
-#include <mach-o/loader.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -13,20 +14,72 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#if defined(__APPLE__) && defined(__aarch64__)
+#  define ASMREPL_APPLE_ARM64 1
+#elif defined(__APPLE__) && defined(__x86_64__)
+#  define ASMREPL_APPLE_X86_64 1
+#elif defined(__linux__) && defined(__aarch64__)
+#  define ASMREPL_LINUX_ARM64 1
+#elif defined(__linux__) && defined(__x86_64__)
+#  define ASMREPL_LINUX_X86_64 1
+#else
+#  error "asmrepl: unsupported platform; supported: macOS arm64/x86_64, Linux arm64/x86_64"
+#endif
+
+#if defined(ASMREPL_APPLE_ARM64) || defined(ASMREPL_LINUX_ARM64)
+#  define ASMREPL_ARCH_ARM64 1
+#endif
+#if defined(ASMREPL_APPLE_X86_64) || defined(ASMREPL_LINUX_X86_64)
+#  define ASMREPL_ARCH_X86_64 1
+#endif
+
 #ifdef __APPLE__
-#include <libkern/OSCacheControl.h>
+#  include <mach-o/loader.h>
+#  include <libkern/OSCacheControl.h>
+#  define ASMREPL_FORMAT_MACHO 1
+#  define ENTRY_SYMBOL "_asmrepl_entry"
+#else
+#  include <elf.h>
+#  define ASMREPL_FORMAT_ELF 1
+#  define ENTRY_SYMBOL "asmrepl_entry"
+#  ifndef MAP_ANON
+#    define MAP_ANON MAP_ANONYMOUS
+#  endif
 #endif
 
 #define BUILD_DIR ".asmrepl-build"
 #define SCRATCH_SIZE 4096
 #define MAX_INPUT 4096
-#define REG_COUNT 31
 
+#if ASMREPL_ARCH_ARM64
+#  define REG_COUNT 31
 typedef struct {
     uint64_t x[REG_COUNT];
     uint64_t nzcv;
     uint64_t sp;
 } reg_context_t;
+#elif ASMREPL_ARCH_X86_64
+typedef struct {
+    /* Offsets are referenced from the JIT wrapper; do not reorder. */
+    uint64_t rax;     /* 0   */
+    uint64_t rcx;     /* 8   */
+    uint64_t rdx;     /* 16  */
+    uint64_t rbx;     /* 24  */
+    uint64_t rsp;     /* 32  */
+    uint64_t rbp;     /* 40  */
+    uint64_t rsi;     /* 48  */
+    uint64_t rdi;     /* 56  */
+    uint64_t r8;      /* 64  */
+    uint64_t r9;      /* 72  */
+    uint64_t r10;     /* 80  */
+    uint64_t r11;     /* 88  */
+    uint64_t r12;     /* 96  */
+    uint64_t r13;     /* 104 */
+    uint64_t r14;     /* 112 */
+    uint64_t r15;     /* 120 */
+    uint64_t rflags;  /* 128 */
+} reg_context_t;
+#endif
 
 typedef struct {
     uint8_t *data;
@@ -153,18 +206,36 @@ static void ensure_build_dir(void) {
 
 static void reset_context(reg_context_t *ctx, void *scratch) {
     memset(ctx, 0, sizeof(*ctx));
+#if ASMREPL_ARCH_ARM64
     ctx->x[19] = (uint64_t)(uintptr_t)scratch;
     ctx->x[20] = SCRATCH_SIZE;
+#elif ASMREPL_ARCH_X86_64
+    ctx->r15 = (uint64_t)(uintptr_t)scratch;
+    ctx->r14 = SCRATCH_SIZE;
+#endif
 }
 
-static void print_flags(uint64_t nzcv) {
+#if ASMREPL_ARCH_ARM64
+static void print_flags_arm(uint64_t nzcv) {
     putchar((nzcv & (1ULL << 31)) ? 'N' : 'n');
     putchar((nzcv & (1ULL << 30)) ? 'Z' : 'z');
     putchar((nzcv & (1ULL << 29)) ? 'C' : 'c');
     putchar((nzcv & (1ULL << 28)) ? 'V' : 'v');
 }
+#elif ASMREPL_ARCH_X86_64
+static void print_flags_x86(uint64_t rflags) {
+    /* Print the common arithmetic flags. Bit numbers per Intel SDM. */
+    putchar((rflags & (1ULL << 11)) ? 'O' : 'o'); /* overflow */
+    putchar((rflags & (1ULL << 7))  ? 'S' : 's'); /* sign */
+    putchar((rflags & (1ULL << 6))  ? 'Z' : 'z'); /* zero */
+    putchar((rflags & (1ULL << 4))  ? 'A' : 'a'); /* aux carry */
+    putchar((rflags & (1ULL << 2))  ? 'P' : 'p'); /* parity */
+    putchar((rflags & (1ULL << 0))  ? 'C' : 'c'); /* carry */
+}
+#endif
 
 static void print_regs(const reg_context_t *ctx) {
+#if ASMREPL_ARCH_ARM64
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 4; col++) {
             int reg = row * 4 + col;
@@ -179,12 +250,48 @@ static void print_regs(const reg_context_t *ctx) {
     printf("sp  0x%016llx  nzcv 0x%016llx [",
            (unsigned long long)ctx->sp,
            (unsigned long long)ctx->nzcv);
-    print_flags(ctx->nzcv);
+    print_flags_arm(ctx->nzcv);
     puts("]");
+#elif ASMREPL_ARCH_X86_64
+    static const struct { const char *name; size_t off; } gprs[] = {
+        {"rax", offsetof(reg_context_t, rax)},
+        {"rcx", offsetof(reg_context_t, rcx)},
+        {"rdx", offsetof(reg_context_t, rdx)},
+        {"rbx", offsetof(reg_context_t, rbx)},
+        {"rsp", offsetof(reg_context_t, rsp)},
+        {"rbp", offsetof(reg_context_t, rbp)},
+        {"rsi", offsetof(reg_context_t, rsi)},
+        {"rdi", offsetof(reg_context_t, rdi)},
+        {"r8 ", offsetof(reg_context_t, r8)},
+        {"r9 ", offsetof(reg_context_t, r9)},
+        {"r10", offsetof(reg_context_t, r10)},
+        {"r11", offsetof(reg_context_t, r11)},
+        {"r12", offsetof(reg_context_t, r12)},
+        {"r13", offsetof(reg_context_t, r13)},
+        {"r14", offsetof(reg_context_t, r14)},
+        {"r15", offsetof(reg_context_t, r15)},
+    };
+    const uint8_t *base = (const uint8_t *)ctx;
+    for (int i = 0; i < 16; i++) {
+        uint64_t v;
+        memcpy(&v, base + gprs[i].off, sizeof(v));
+        printf("%s 0x%016llx  ", gprs[i].name, (unsigned long long)v);
+        if ((i % 4) == 3) putchar('\n');
+    }
+    printf("rflags 0x%016llx [", (unsigned long long)ctx->rflags);
+    print_flags_x86(ctx->rflags);
+    puts("]");
+#endif
 }
 
 static void print_help(void) {
+#if ASMREPL_APPLE_ARM64
     puts("Enter Apple ARM64 assembly.");
+#elif ASMREPL_LINUX_ARM64
+    puts("Enter Linux arm64 assembly.");
+#elif ASMREPL_ARCH_X86_64
+    puts("Enter x86_64 assembly (Intel syntax; the wrapper sets .intel_syntax noprefix).");
+#endif
     puts("");
     puts("Commands:");
     puts("  :help     show this help");
@@ -202,9 +309,15 @@ static void print_help(void) {
     puts("  The block is committed when you outdent.");
     puts("");
     puts("Notes:");
+#if ASMREPL_ARCH_ARM64
     puts("  x19 starts as a writable scratch page pointer.");
     puts("  x20 starts as the scratch page size.");
     puts("  The wrapper depends on the real process sp; unbalanced sp changes may crash.");
+#elif ASMREPL_ARCH_X86_64
+    puts("  r15 starts as a writable scratch page pointer.");
+    puts("  r14 starts as the scratch page size.");
+    puts("  The wrapper depends on the real process rsp; unbalanced rsp changes may crash.");
+#endif
     puts("  Branches, calls, traps, syscalls, and memory corruption are intentionally not sandboxed.");
 }
 
@@ -237,6 +350,7 @@ static int run_command(char *const argv[]) {
     return 1;
 }
 
+#if ASMREPL_ARCH_ARM64
 static void emit_load_registers(FILE *fp) {
     for (int reg = 1; reg <= 30; reg++) {
         fprintf(fp, "  ldr x%d, [x0, #%d]\n", reg, reg * 8);
@@ -262,17 +376,11 @@ static void emit_store_registers(FILE *fp) {
     fputs("  str x27, [x28, #256]\n", fp);
 }
 
-static bool write_assembly_file(const char *path, const char *line, const char *definitions) {
-    FILE *fp = fopen(path, "w");
-    if (!fp) {
-        perror(path);
-        return false;
-    }
-
+static void emit_wrapper(FILE *fp, const char *line) {
     fputs(".text\n", fp);
-    fputs(".globl _asmrepl_entry\n", fp);
+    fputs(".globl " ENTRY_SYMBOL "\n", fp);
     fputs(".p2align 2\n", fp);
-    fputs("_asmrepl_entry:\n", fp);
+    fputs(ENTRY_SYMBOL ":\n", fp);
     fputs("  sub sp, sp, #128\n", fp);
     fputs("  str x0, [sp, #0]\n", fp);
     fputs("  str x30, [sp, #8]\n", fp);
@@ -294,6 +402,101 @@ static bool write_assembly_file(const char *path, const char *line, const char *
     fputs("  ldr x30, [sp, #8]\n", fp);
     fputs("  add sp, sp, #128\n", fp);
     fputs("  ret\n", fp);
+}
+#elif ASMREPL_ARCH_X86_64
+/*
+ * Wrapper for x86_64 (System V ABI; Linux and Intel macOS share this).
+ *
+ * On entry, System V ABI puts the reg_context_t* in rdi. We:
+ *   1. Save callee-saved registers (rbx, rbp, r12-r15) and the ctx pointer.
+ *   2. Restore the user's saved register state from the context.
+ *   3. Run the user's instruction.
+ *   4. Spill user state back into the context (using xchg with [rsp] to
+ *      recover the ctx pointer without disturbing rflags).
+ *   5. Restore host callee-saved registers and return.
+ */
+static void emit_wrapper(FILE *fp, const char *line) {
+    fputs(".intel_syntax noprefix\n", fp);
+    fputs(".text\n", fp);
+    fputs(".globl " ENTRY_SYMBOL "\n", fp);
+    fputs(".p2align 4\n", fp);
+    fputs(ENTRY_SYMBOL ":\n", fp);
+    /* save host callee-saved registers */
+    fputs("  push rbx\n", fp);
+    fputs("  push rbp\n", fp);
+    fputs("  push r12\n", fp);
+    fputs("  push r13\n", fp);
+    fputs("  push r14\n", fp);
+    fputs("  push r15\n", fp);
+    /* save ctx pointer at [rsp] */
+    fputs("  push rdi\n", fp);
+    /* load user state from ctx */
+    fputs("  mov rax, [rdi + 0]\n", fp);
+    fputs("  mov rcx, [rdi + 8]\n", fp);
+    fputs("  mov rdx, [rdi + 16]\n", fp);
+    fputs("  mov rbx, [rdi + 24]\n", fp);
+    fputs("  mov rbp, [rdi + 40]\n", fp);
+    fputs("  mov rsi, [rdi + 48]\n", fp);
+    fputs("  mov r8,  [rdi + 64]\n", fp);
+    fputs("  mov r9,  [rdi + 72]\n", fp);
+    fputs("  mov r10, [rdi + 80]\n", fp);
+    fputs("  mov r11, [rdi + 88]\n", fp);
+    fputs("  mov r12, [rdi + 96]\n", fp);
+    fputs("  mov r13, [rdi + 104]\n", fp);
+    fputs("  mov r14, [rdi + 112]\n", fp);
+    fputs("  mov r15, [rdi + 120]\n", fp);
+    fputs("  push qword ptr [rdi + 128]\n", fp);
+    fputs("  popfq\n", fp);
+    fputs("  mov rdi, [rdi + 56]\n", fp);
+    /* user instruction */
+    fprintf(fp, "  %s\n", line);
+    /* recover ctx pointer via xchg (does not touch rflags) */
+    fputs("  xchg rdi, [rsp]\n", fp);
+    /* save user GPRs */
+    fputs("  mov [rdi + 0], rax\n", fp);
+    fputs("  mov [rdi + 8], rcx\n", fp);
+    fputs("  mov [rdi + 16], rdx\n", fp);
+    fputs("  mov [rdi + 24], rbx\n", fp);
+    fputs("  mov [rdi + 40], rbp\n", fp);
+    fputs("  mov [rdi + 48], rsi\n", fp);
+    fputs("  mov [rdi + 64], r8\n", fp);
+    fputs("  mov [rdi + 72], r9\n", fp);
+    fputs("  mov [rdi + 80], r10\n", fp);
+    fputs("  mov [rdi + 88], r11\n", fp);
+    fputs("  mov [rdi + 96], r12\n", fp);
+    fputs("  mov [rdi + 104], r13\n", fp);
+    fputs("  mov [rdi + 112], r14\n", fp);
+    fputs("  mov [rdi + 120], r15\n", fp);
+    /* save user rflags before any flag-modifying op */
+    fputs("  pushfq\n", fp);
+    fputs("  pop rax\n", fp);
+    fputs("  mov [rdi + 128], rax\n", fp);
+    /* save user rdi (sitting on stack) */
+    fputs("  mov rax, [rsp]\n", fp);
+    fputs("  mov [rdi + 56], rax\n", fp);
+    /* save user rsp (host slot just below user_rdi) */
+    fputs("  lea rax, [rsp + 8]\n", fp);
+    fputs("  mov [rdi + 32], rax\n", fp);
+    /* discard saved user_rdi slot; restore host callee-saved */
+    fputs("  add rsp, 8\n", fp);
+    fputs("  pop r15\n", fp);
+    fputs("  pop r14\n", fp);
+    fputs("  pop r13\n", fp);
+    fputs("  pop r12\n", fp);
+    fputs("  pop rbp\n", fp);
+    fputs("  pop rbx\n", fp);
+    fputs("  ret\n", fp);
+}
+#endif
+
+static bool write_assembly_file(const char *path, const char *line, const char *definitions) {
+    FILE *fp = fopen(path, "w");
+    if (!fp) {
+        perror(path);
+        return false;
+    }
+
+    emit_wrapper(fp, line);
 
     if (definitions && definitions[0] != '\0') {
         fputs("\n// persisted REPL definitions\n", fp);
@@ -350,6 +553,7 @@ static bool checked_range(size_t offset, size_t size, size_t total) {
     return offset <= total && size <= total - offset;
 }
 
+#if ASMREPL_FORMAT_MACHO
 static bool extract_text_section(const char *object_path, code_blob_t *blob) {
     size_t file_size = 0;
     uint8_t *file = read_file(object_path, &file_size);
@@ -429,6 +633,109 @@ static bool extract_text_section(const char *object_path, code_blob_t *blob) {
     free(file);
     return false;
 }
+#elif ASMREPL_FORMAT_ELF
+static bool extract_text_section(const char *object_path, code_blob_t *blob) {
+    size_t file_size = 0;
+    uint8_t *file = read_file(object_path, &file_size);
+    if (!file) {
+        return false;
+    }
+
+    if (file_size < sizeof(Elf64_Ehdr)) {
+        fprintf(stderr, "object file is too small for ELF64\n");
+        free(file);
+        return false;
+    }
+
+    const Elf64_Ehdr *ehdr = (const Elf64_Ehdr *)file;
+    if (memcmp(ehdr->e_ident, ELFMAG, SELFMAG) != 0) {
+        fprintf(stderr, "object file is not ELF\n");
+        free(file);
+        return false;
+    }
+    if (ehdr->e_ident[EI_CLASS] != ELFCLASS64) {
+        fprintf(stderr, "object file is not ELF64\n");
+        free(file);
+        return false;
+    }
+#if ASMREPL_ARCH_X86_64
+    if (ehdr->e_machine != EM_X86_64) {
+        fprintf(stderr, "object file is not x86_64\n");
+        free(file);
+        return false;
+#elif ASMREPL_ARCH_ARM64
+    if (ehdr->e_machine != EM_AARCH64) {
+        fprintf(stderr, "object file is not aarch64\n");
+        free(file);
+        return false;
+#endif
+    }
+    if (ehdr->e_shoff == 0 || ehdr->e_shentsize != sizeof(Elf64_Shdr) || ehdr->e_shnum == 0) {
+        fprintf(stderr, "ELF object has no section headers\n");
+        free(file);
+        return false;
+    }
+
+    size_t shtab_bytes = (size_t)ehdr->e_shentsize * ehdr->e_shnum;
+    if (!checked_range((size_t)ehdr->e_shoff, shtab_bytes, file_size)) {
+        fprintf(stderr, "ELF section headers out of range\n");
+        free(file);
+        return false;
+    }
+
+    const Elf64_Shdr *sections = (const Elf64_Shdr *)(file + ehdr->e_shoff);
+
+    if (ehdr->e_shstrndx == SHN_UNDEF || ehdr->e_shstrndx >= ehdr->e_shnum) {
+        fprintf(stderr, "ELF section name string table missing\n");
+        free(file);
+        return false;
+    }
+    const Elf64_Shdr *strtab = &sections[ehdr->e_shstrndx];
+    if (!checked_range((size_t)strtab->sh_offset, (size_t)strtab->sh_size, file_size)) {
+        fprintf(stderr, "ELF string table out of range\n");
+        free(file);
+        return false;
+    }
+    const char *strtab_data = (const char *)(file + strtab->sh_offset);
+
+    for (uint16_t i = 0; i < ehdr->e_shnum; i++) {
+        const Elf64_Shdr *sh = &sections[i];
+        if (sh->sh_name >= strtab->sh_size) {
+            continue;
+        }
+        const char *name = strtab_data + sh->sh_name;
+        if (strcmp(name, ".text") != 0) {
+            continue;
+        }
+
+        /* Reject if any relocation section refers to this section. */
+        for (uint16_t j = 0; j < ehdr->e_shnum; j++) {
+            const Elf64_Shdr *rel = &sections[j];
+            if ((rel->sh_type == SHT_REL || rel->sh_type == SHT_RELA) &&
+                rel->sh_info == i && rel->sh_size > 0) {
+                fprintf(stderr, "assembly produced relocations; labels/external references are not supported yet\n");
+                free(file);
+                return false;
+            }
+        }
+
+        if (!checked_range((size_t)sh->sh_offset, (size_t)sh->sh_size, file_size)) {
+            fprintf(stderr, "invalid .text section range\n");
+            free(file);
+            return false;
+        }
+        blob->size = (size_t)sh->sh_size;
+        blob->data = xmalloc(blob->size);
+        memcpy(blob->data, file + sh->sh_offset, blob->size);
+        free(file);
+        return true;
+    }
+
+    fprintf(stderr, "could not find .text in object\n");
+    free(file);
+    return false;
+}
+#endif
 
 static bool assemble_line(const char *line, const char *definitions, unsigned long serial, code_blob_t *blob) {
     char asm_path[256];
@@ -440,16 +747,22 @@ static bool assemble_line(const char *line, const char *definitions, unsigned lo
         return false;
     }
 
+#if ASMREPL_APPLE_ARM64
     char *const argv[] = {
-        "clang",
-        "-c",
-        "-arch",
-        "arm64",
-        asm_path,
-        "-o",
-        obj_path,
-        NULL,
+        "clang", "-c", "-arch", "arm64",
+        asm_path, "-o", obj_path, NULL,
     };
+#elif ASMREPL_APPLE_X86_64
+    char *const argv[] = {
+        "clang", "-c", "-arch", "x86_64",
+        asm_path, "-o", obj_path, NULL,
+    };
+#else /* Linux: native object format, no -arch needed */
+    char *const argv[] = {
+        "clang", "-c",
+        asm_path, "-o", obj_path, NULL,
+    };
+#endif
 
     int status = run_command(argv);
     if (status != 0) {
@@ -476,9 +789,12 @@ static bool execute_blob(const code_blob_t *blob, reg_context_t *ctx) {
 
     memcpy(mem, blob->data, blob->size);
 
-#ifdef __APPLE__
+#if ASMREPL_APPLE_ARM64
     sys_icache_invalidate(mem, blob->size);
+#elif ASMREPL_LINUX_ARM64
+    __builtin___clear_cache((char *)mem, (char *)mem + blob->size);
 #endif
+    /* On x86_64 the icache is coherent with stores, no flush needed. */
 
     if (mprotect(mem, map_size, PROT_READ | PROT_EXEC) != 0) {
         perror("mprotect");
@@ -524,11 +840,6 @@ static void commit_definition_block(text_buffer_t *definitions, text_buffer_t *b
 }
 
 int main(void) {
-#if !defined(__APPLE__) || !defined(__aarch64__)
-    fprintf(stderr, "asmrepl currently supports Apple Silicon macOS only.\n");
-    return 1;
-#endif
-
     ensure_build_dir();
 
     void *scratch = mmap(NULL, SCRATCH_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -545,10 +856,23 @@ int main(void) {
     text_buffer_init(&block);
     bool in_block = false;
 
-    puts("arm64 native assembly REPL. Type :help for commands.");
+#if ASMREPL_APPLE_ARM64
+    const char *banner = "arm64 native assembly REPL (macOS).";
+#elif ASMREPL_APPLE_X86_64
+    const char *banner = "x86_64 native assembly REPL (macOS). Intel syntax.";
+#elif ASMREPL_LINUX_ARM64
+    const char *banner = "arm64 native assembly REPL (Linux).";
+#elif ASMREPL_LINUX_X86_64
+    const char *banner = "x86_64 native assembly REPL (Linux). Intel syntax.";
+#endif
+    printf("%s Type :help for commands.\n", banner);
+#if ASMREPL_ARCH_ARM64
     printf("scratch: x19 = 0x%016llx, x20 = %d bytes\n",
-           (unsigned long long)(uintptr_t)scratch,
-           SCRATCH_SIZE);
+           (unsigned long long)(uintptr_t)scratch, SCRATCH_SIZE);
+#elif ASMREPL_ARCH_X86_64
+    printf("scratch: r15 = 0x%016llx, r14 = %d bytes\n",
+           (unsigned long long)(uintptr_t)scratch, SCRATCH_SIZE);
+#endif
 
     char input[MAX_INPUT];
     unsigned long serial = 1;
