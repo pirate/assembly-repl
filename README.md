@@ -173,51 +173,94 @@ Once stopped at a crash or breakpoint:
 The built-in register dump is usually enough for simple instruction-level
 learning, but LLDB is useful when you intentionally try dangerous instructions.
 
-## Pure Assembly: Addition-Only Calculator ➕
+## Pure Assembly: Addition + Multiplication Calculator ➕✖️
 
-Here is the smallest version inside the REPL: use `x0` as the running total and
-`x1` as the next number to add.
+Here is a tiny calculator written as standalone ARM64 assembly. Each operation
+is a dedicated callable routine:
+
+- `_calc_add`: adds `x0 + x1`
+- `_calc_mul`: multiplies `x0 * x1`
+- `_calculator_demo`: calls both routines with `bl`
+
+The example computes:
 
 ```text
-asm> mov x0, #0        ; total = 0
-asm> mov x1, #7        ; enter 7
-asm> add x0, x0, x1    ; total = total + 7
-asm> mov x1, #35       ; enter 35
-asm> add x0, x0, x1    ; total = total + 35
+(7 + 35) * 2 = 84
 ```
 
-After the final line, `x0` contains `42`.
-
-The same idea as a standalone pure ARM64 assembly function:
-
 ```asm
-// add_only_calculator.s
+// calculator.s
 // Apple arm64 calling convention:
-//   x0 = pointer to uint64_t values
-//   x1 = number of values
-// returns:
-//   x0 = sum
+//   x0 = first argument / return value
+//   x1 = second argument
+//   bl = branch with link, used like a function call
+//   ret = return to the address in x30
 
 .text
-.globl _add_only_calculator
+.globl _calc_add
+.globl _calc_mul
+.globl _calculator_demo
 .p2align 2
 
-_add_only_calculator:
-  mov x2, x0        // x2 = values pointer
-  mov x3, x1        // x3 = remaining count
-  mov x0, #0        // x0 = running total
+// uint64_t calc_add(uint64_t a, uint64_t b)
+// args:    x0 = a, x1 = b
+// returns: x0 = a + b
+_calc_add:
+  add x0, x0, x1
+  ret
 
-loop:
-  cbz x3, done      // if remaining == 0, return total
-  ldr x4, [x2], #8  // load next uint64_t and advance pointer
-  add x0, x0, x4    // total += value
-  sub x3, x3, #1    // remaining--
-  b loop
+// uint64_t calc_mul(uint64_t a, uint64_t b)
+// args:    x0 = a, x1 = b
+// returns: x0 = a * b
+_calc_mul:
+  mul x0, x0, x1
+  ret
 
-done:
+// uint64_t calculator_demo(void)
+// returns: (7 + 35) * 2
+_calculator_demo:
+  stp x29, x30, [sp, #-16]!  // save frame pointer and return address
+  mov x29, sp
+
+  mov x0, #7                 // first add argument
+  mov x1, #35                // second add argument
+  bl _calc_add               // x0 = calc_add(7, 35) = 42
+
+  mov x1, #2                 // second multiply argument
+  bl _calc_mul               // x0 = calc_mul(42, 2) = 84
+
+  ldp x29, x30, [sp], #16    // restore frame pointer and return address
   ret
 ```
 
-That is an addition-only calculator in the literal sense: it keeps a running
-total, accepts one integer at a time, and the only arithmetic operation it uses
-for the result is `add`.
+You can call the assembly from a tiny C program:
+
+```c
+// main.c
+#include <stdint.h>
+#include <stdio.h>
+
+extern uint64_t calculator_demo(void);
+
+int main(void) {
+    printf("%llu\n", (unsigned long long)calculator_demo());
+    return 0;
+}
+```
+
+Build and run:
+
+```sh
+clang calculator.s main.c -o calculator
+./calculator
+```
+
+Expected output:
+
+```text
+84
+```
+
+The important pattern is that each operation follows the same small calling
+contract: put inputs in `x0` and `x1`, call the routine with `bl`, and read the
+result back from `x0`.
