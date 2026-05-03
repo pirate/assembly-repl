@@ -1,0 +1,9 @@
+.git
+node_modules
+prebuilds
+.repl-build
+.asmrepl-build
+*.dSYM
+asmrepl
+language-repl
+*.tgz

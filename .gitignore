@@ -1,4 +1,5 @@
-.asmrepl-build/
-asmrepl
+.repl-build/
+/asmrepl
+/language-repl
 *.o
 *.dSYM/

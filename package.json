@@ -12,19 +12,25 @@
     "url": "https://github.com/pirate/assembly-repl/issues"
   },
   "bin": {
-    "assembly-repl": "./bin/assembly-repl.js"
+    "assembly-repl": "./bin/repl.js",
+    "c-repl": "./bin/c-repl.js",
+    "cpp-repl": "./bin/cpp-repl.js",
+    "objc-repl": "./bin/objc-repl.js",
+    "llvmir-repl": "./bin/llvmir-repl.js"
   },
   "files": [
     "bin/",
-    "prebuilds/",
-    "README.md",
+    "scripts/",
     "src/",
-    "Makefile"
+    "Makefile",
+    ".dockerignore",
+    "prebuilds/",
+    "README.md"
   ],
   "scripts": {
-    "build": "make",
-    "start": "node ./bin/assembly-repl.js",
-    "pack:check": "pnpm pack --pack-destination /tmp"
+    "build": "node ./scripts/build.js",
+    "start": "node ./bin/repl.js",
+    "pack:check": "node ./scripts/check-package.js && pnpm pack --pack-destination /tmp"
   },
   "keywords": [
     "assembly",
@@ -32,6 +38,11 @@
     "aarch64",
     "x86_64",
     "x64",
+    "c",
+    "cpp",
+    "objective-c",
+    "llvm",
+    "llvm-ir",
     "linux",
     "repl",
     "jit",
@@ -48,5 +59,8 @@
   "engines": {
     "node": ">=18"
   },
-  "packageManager": "pnpm@10.33.2"
+  "packageManager": "pnpm@10.33.2",
+  "dependencies": {
+    "ansi-colors": "^4.1.3"
+  }
 }
