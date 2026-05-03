@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "6d07be58cde612c1e7a0bafe091d6c98301150f4",
+  "prompts": {
+    "1a8adb82a1d1f34e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019def8c-c9b2-7f61-9920-fa417449bf11",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 214,
+      "total_deletions": 201,
+      "accepted_lines": 490,
+      "overriden_lines": 0
+    }
+  }
+}
