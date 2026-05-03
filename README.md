@@ -1,12 +1,6 @@
-# assembly-repl 🧪
+# 🧪 `assembly-repl`, `llvmir-repl`, `cpp-repl`, `c-repl`, `objc-repl`
 
-A small family of low-level REPLs for learning assembly and LLVM IR. The main `assembly-repl`
-executes CPU assembly directly, but the package also provides `c-repl`, `cpp-repl`,
-`objc-repl`, and `llvmir-repl` as well.
-
-The package ships prebuilt native runners for macOS (`arm64`) and Linux
-(`x86_64`, `arm64`); `npm install assembly-repl` picks the right one for your
-machine automatically.
+A small family of low-level REPLs for learning assembly and LLVM IR.
 
 Type assembly, run it directly on the CPU, and immediately see the register
 state that came back. You can enter single instructions or define normal
@@ -66,9 +60,10 @@ the REPLs shell out to the compiler for the code you type.
 Every REPL prints its `:help` text at startup. You can ask for help again or
 look up a specific topic or instruction from the prompt:
 
-```text
+```bash
 :help
 :help <topic-or-instruction>
+:instructions                  # list all available instructions
 ```
 
 You can also add `?` after an instruction or topic:
@@ -82,11 +77,6 @@ cpp> template?
 objc> message?
 ir> getelementptr?
 ```
-
-`assembly-repl` uses `:instructions` to list built-in instruction help topics
-for the current architecture. `llvmir-repl` uses `:topics` for built-in help
-topics and `:instructions` to discover LLVM IR instructions from the installed
-LLVM/Clang toolchain.
 
 ## `assembly-repl`
 
