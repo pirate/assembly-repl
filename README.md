@@ -1,7 +1,7 @@
 # assembly-repl 🧪
 
 A native assembly REPL. The package ships prebuilt binaries for macOS
-(`arm64`) and Linux (`x86_64`, `arm64`); `npm install` picks the right
+(`arm64`) and Linux (`x86_64`, `arm64`); `npm install assembly-repl` picks the right
 one for your machine automatically.
 
 Type assembly, run it directly on the CPU, and immediately see the register
