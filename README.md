@@ -26,12 +26,33 @@ containing the scratch page size.
 ## Requirements 🍎
 
 - Apple Silicon Mac
-- `clang`
-- `make`
+- `clang` at runtime, because the REPL assembles each input with Apple Clang
+- `make` only if building from source
 
 This version targets Apple `arm64` Mach-O only.
 
-## Build 🚀
+## Install 🚀
+
+The npm package bundles a prebuilt `darwin-arm64` binary. Installing it does not
+run `node-gyp`, `make`, or a native build.
+
+Run without installing globally:
+
+```sh
+pnpm dlx assembly-repl
+```
+
+Or install globally:
+
+```sh
+pnpm add -g assembly-repl
+assembly-repl
+```
+
+The binary is prebuilt, but `clang` is still required at runtime because the REPL
+uses it to assemble the code you type.
+
+## Build From Source 🛠️
 
 ```sh
 make

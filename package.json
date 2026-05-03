@@ -1,0 +1,46 @@
+{
+  "name": "assembly-repl",
+  "version": "0.1.0",
+  "description": "Unsafe native ARM64 assembly REPL for Apple Silicon macOS",
+  "license": "MIT",
+  "homepage": "https://github.com/pirate/assembly-repl#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/pirate/assembly-repl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pirate/assembly-repl/issues"
+  },
+  "bin": {
+    "assembly-repl": "./prebuilds/darwin-arm64/assembly-repl"
+  },
+  "files": [
+    "prebuilds/",
+    "README.md",
+    "src/",
+    "Makefile"
+  ],
+  "scripts": {
+    "build": "make",
+    "start": "./prebuilds/darwin-arm64/assembly-repl",
+    "pack:check": "pnpm pack --pack-destination /tmp"
+  },
+  "keywords": [
+    "assembly",
+    "arm64",
+    "aarch64",
+    "repl",
+    "jit",
+    "apple-silicon"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "pnpm@10.33.2"
+}
