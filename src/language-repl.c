@@ -1251,6 +1251,41 @@ static bool write_llvm_source(const char *path, const char *definitions, const c
     return true;
 }
 
+static bool llvm_opaque_pointer_flag_supported(void) {
+    static int supported = -1;
+    if (supported >= 0) {
+        return supported == 1;
+    }
+
+    ensure_build_dir();
+
+    char source_path[REPL_MAX_INPUT];
+    char object_path[REPL_MAX_INPUT];
+    snprintf(source_path, sizeof(source_path), "%s/llvm-opaque-probe-%ld.ll", BUILD_DIR, (long)getpid());
+    snprintf(object_path, sizeof(object_path), "%s/llvm-opaque-probe-%ld.o", BUILD_DIR, (long)getpid());
+
+    FILE *fp = fopen(source_path, "w");
+    if (!fp) {
+        supported = 0;
+        return false;
+    }
+    fputs("define void @f(ptr %p) {\n  ret void\n}\n", fp);
+    if (fclose(fp) != 0) {
+        unlink(source_path);
+        supported = 0;
+        return false;
+    }
+
+    char *const argv[] = {
+        "clang", "-Wno-override-module", "-mllvm", "-opaque-pointers",
+        "-c", source_path, "-o", object_path, NULL,
+    };
+    supported = run_command_with_stdio(argv, true) == 0 ? 1 : 0;
+    unlink(source_path);
+    unlink(object_path);
+    return supported == 1;
+}
+
 static bool compile_shared(repl_mode_t mode, const char *source_path, const char *library_path, bool quiet) {
 #ifdef __APPLE__
     const char *shared_flag = "-dynamiclib";
@@ -1312,11 +1347,20 @@ static bool compile_shared(repl_mode_t mode, const char *source_path, const char
     }
 
     if (mode == MODE_LLVMIR) {
-        char *const argv[] = {
-            "clang", "-Wno-override-module", "-fPIC", (char *)shared_flag,
-            (char *)source_path, "-o", (char *)library_path, NULL,
-        };
-        int status = run_command_with_stdio(argv, quiet);
+        int status = 0;
+        if (llvm_opaque_pointer_flag_supported()) {
+            char *const argv[] = {
+                "clang", "-Wno-override-module", "-mllvm", "-opaque-pointers",
+                "-fPIC", (char *)shared_flag, (char *)source_path, "-o", (char *)library_path, NULL,
+            };
+            status = run_command_with_stdio(argv, quiet);
+        } else {
+            char *const argv[] = {
+                "clang", "-Wno-override-module", "-fPIC", (char *)shared_flag,
+                (char *)source_path, "-o", (char *)library_path, NULL,
+            };
+            status = run_command_with_stdio(argv, quiet);
+        }
         if (status != 0) {
             if (!quiet) {
                 fprintf(stderr, "llvm ir compilation failed with exit code %d\n", status);
