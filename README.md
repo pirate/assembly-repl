@@ -39,13 +39,13 @@ run `node-gyp`, `make`, or a native build.
 Run without installing globally:
 
 ```sh
-pnpm dlx assembly-repl
+npx assembly-repl
 ```
 
 Or install globally:
 
 ```sh
-pnpm add -g assembly-repl
+npm i -g assembly-repl
 assembly-repl
 ```
 
