@@ -1,6 +1,6 @@
 # assembly-repl 🧪
 
-A small family of unsafe native-code REPLs. The main `assembly-repl`
+A small family of low-level REPLs for learning assembly and LLVM IR. The main `assembly-repl`
 executes CPU assembly directly, but the package also provides `c-repl`, `cpp-repl`,
 `objc-repl`, and `llvmir-repl` as well.
 
