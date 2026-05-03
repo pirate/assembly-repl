@@ -33,6 +33,12 @@ typedef struct {
     size_t size;
 } code_blob_t;
 
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+} text_buffer_t;
+
 typedef void (*jit_fn_t)(reg_context_t *);
 
 static noreturn void die(const char *message) {
@@ -46,6 +52,53 @@ static void *xmalloc(size_t size) {
         die("malloc");
     }
     return ptr;
+}
+
+static void *xrealloc(void *ptr, size_t size) {
+    void *new_ptr = realloc(ptr, size);
+    if (!new_ptr) {
+        die("realloc");
+    }
+    return new_ptr;
+}
+
+static void text_buffer_init(text_buffer_t *buf) {
+    buf->cap = 4096;
+    buf->len = 0;
+    buf->data = xmalloc(buf->cap);
+    buf->data[0] = '\0';
+}
+
+static void text_buffer_clear(text_buffer_t *buf) {
+    buf->len = 0;
+    if (buf->data) {
+        buf->data[0] = '\0';
+    }
+}
+
+static void text_buffer_append(text_buffer_t *buf, const char *text) {
+    size_t text_len = strlen(text);
+    if (buf->len + text_len + 1 > buf->cap) {
+        while (buf->len + text_len + 1 > buf->cap) {
+            buf->cap *= 2;
+        }
+        buf->data = xrealloc(buf->data, buf->cap);
+    }
+
+    memcpy(buf->data + buf->len, text, text_len + 1);
+    buf->len += text_len;
+}
+
+static void text_buffer_append_line(text_buffer_t *buf, const char *line) {
+    text_buffer_append(buf, line);
+    text_buffer_append(buf, "\n");
+}
+
+static void text_buffer_free(text_buffer_t *buf) {
+    free(buf->data);
+    buf->data = NULL;
+    buf->len = 0;
+    buf->cap = 0;
 }
 
 static char *trim(char *line) {
@@ -63,6 +116,33 @@ static char *trim(char *line) {
     }
 
     return line;
+}
+
+static bool starts_indented(const char *line) {
+    return line[0] == ' ' || line[0] == '\t';
+}
+
+static bool is_directive(const char *line) {
+    return line[0] == '.';
+}
+
+static bool is_label_line(const char *line) {
+    const char *colon = strchr(line, ':');
+    if (!colon) {
+        return false;
+    }
+
+    for (const char *p = line; p < colon; p++) {
+        if (*p == ' ' || *p == '\t') {
+            return false;
+        }
+    }
+
+    return colon > line;
+}
+
+static bool is_definition_start(const char *line) {
+    return !starts_indented(line) && is_label_line(line);
 }
 
 static void ensure_build_dir(void) {
@@ -104,14 +184,22 @@ static void print_regs(const reg_context_t *ctx) {
 }
 
 static void print_help(void) {
-    puts("Enter one Apple ARM64 assembly instruction per line.");
+    puts("Enter Apple ARM64 assembly.");
     puts("");
     puts("Commands:");
     puts("  :help     show this help");
     puts("  :regs     print current registers");
     puts("  :reset    zero registers and restore scratch pointers");
     puts("  :scratch  print scratch memory pointer and size");
+    puts("  :defs     print persisted labels/directives/routines");
+    puts("  :clear    clear persisted labels/directives/routines");
     puts("  :quit     exit");
+    puts("");
+    puts("Block mode:");
+    puts("  A directive at column 0 is persisted immediately.");
+    puts("  A label at column 0 starts a persistent definition block.");
+    puts("  Indented lines are added to that block.");
+    puts("  The block is committed when you outdent.");
     puts("");
     puts("Notes:");
     puts("  x19 starts as a writable scratch page pointer.");
@@ -174,7 +262,7 @@ static void emit_store_registers(FILE *fp) {
     fputs("  str x27, [x28, #256]\n", fp);
 }
 
-static bool write_assembly_file(const char *path, const char *line) {
+static bool write_assembly_file(const char *path, const char *line, const char *definitions) {
     FILE *fp = fopen(path, "w");
     if (!fp) {
         perror(path);
@@ -206,6 +294,14 @@ static bool write_assembly_file(const char *path, const char *line) {
     fputs("  ldr x30, [sp, #8]\n", fp);
     fputs("  add sp, sp, #128\n", fp);
     fputs("  ret\n", fp);
+
+    if (definitions && definitions[0] != '\0') {
+        fputs("\n// persisted REPL definitions\n", fp);
+        fputs(definitions, fp);
+        if (definitions[strlen(definitions) - 1] != '\n') {
+            fputc('\n', fp);
+        }
+    }
 
     if (fclose(fp) != 0) {
         perror(path);
@@ -334,13 +430,13 @@ static bool extract_text_section(const char *object_path, code_blob_t *blob) {
     return false;
 }
 
-static bool assemble_line(const char *line, unsigned long serial, code_blob_t *blob) {
+static bool assemble_line(const char *line, const char *definitions, unsigned long serial, code_blob_t *blob) {
     char asm_path[256];
     char obj_path[256];
-    snprintf(asm_path, sizeof(asm_path), BUILD_DIR "/line-%lu.s", serial);
-    snprintf(obj_path, sizeof(obj_path), BUILD_DIR "/line-%lu.o", serial);
+    snprintf(asm_path, sizeof(asm_path), BUILD_DIR "/line-%ld-%lu.s", (long)getpid(), serial);
+    snprintf(obj_path, sizeof(obj_path), BUILD_DIR "/line-%ld-%lu.o", (long)getpid(), serial);
 
-    if (!write_assembly_file(asm_path, line)) {
+    if (!write_assembly_file(asm_path, line, definitions)) {
         return false;
     }
 
@@ -400,15 +496,31 @@ static bool execute_blob(const code_blob_t *blob, reg_context_t *ctx) {
     return true;
 }
 
-static bool run_line(const char *line, unsigned long serial, reg_context_t *ctx) {
+static bool run_line(const char *line, const char *definitions, unsigned long serial, reg_context_t *ctx) {
     code_blob_t blob = {0};
-    if (!assemble_line(line, serial, &blob)) {
+    if (!assemble_line(line, definitions, serial, &blob)) {
         return false;
     }
 
     bool ok = execute_blob(&blob, ctx);
     free(blob.data);
     return ok;
+}
+
+static void commit_definition_block(text_buffer_t *definitions, text_buffer_t *block) {
+    if (block->len == 0) {
+        return;
+    }
+
+    if (definitions->len > 0 && definitions->data[definitions->len - 1] != '\n') {
+        text_buffer_append(definitions, "\n");
+    }
+    text_buffer_append(definitions, block->data);
+    if (definitions->len > 0 && definitions->data[definitions->len - 1] != '\n') {
+        text_buffer_append(definitions, "\n");
+    }
+    text_buffer_clear(block);
+    puts("definition block committed");
 }
 
 int main(void) {
@@ -427,6 +539,12 @@ int main(void) {
     reg_context_t ctx;
     reset_context(&ctx, scratch);
 
+    text_buffer_t definitions;
+    text_buffer_t block;
+    text_buffer_init(&definitions);
+    text_buffer_init(&block);
+    bool in_block = false;
+
     puts("arm64 native assembly REPL. Type :help for commands.");
     printf("scratch: x19 = 0x%016llx, x20 = %d bytes\n",
            (unsigned long long)(uintptr_t)scratch,
@@ -435,7 +553,7 @@ int main(void) {
     char input[MAX_INPUT];
     unsigned long serial = 1;
     for (;;) {
-        fputs("asm> ", stdout);
+        fputs(in_block ? "asm| " : "asm> ", stdout);
         fflush(stdout);
 
         if (!fgets(input, sizeof(input), stdin)) {
@@ -443,9 +561,24 @@ int main(void) {
             break;
         }
 
+        char raw_line[MAX_INPUT];
+        snprintf(raw_line, sizeof(raw_line), "%s", input);
+        size_t raw_len = strlen(raw_line);
+        while (raw_len > 0 && (raw_line[raw_len - 1] == '\n' || raw_line[raw_len - 1] == '\r')) {
+            raw_line[--raw_len] = '\0';
+        }
+
         char *line = trim(input);
         if (*line == '\0') {
+            if (in_block) {
+                text_buffer_append_line(&block, "");
+            }
             continue;
+        }
+
+        if (in_block && !starts_indented(raw_line)) {
+            commit_definition_block(&definitions, &block);
+            in_block = false;
         }
 
         if (strcmp(line, ":quit") == 0 || strcmp(line, ":q") == 0) {
@@ -475,11 +608,55 @@ int main(void) {
             continue;
         }
 
-        if (run_line(line, serial++, &ctx)) {
+        if (strcmp(line, ":defs") == 0) {
+            if (definitions.len == 0 && block.len == 0) {
+                puts("(no definitions)");
+            } else {
+                if (definitions.len > 0) {
+                    fputs(definitions.data, stdout);
+                }
+                if (block.len > 0) {
+                    fputs(block.data, stdout);
+                }
+            }
+            continue;
+        }
+
+        if (strcmp(line, ":clear") == 0) {
+            text_buffer_clear(&definitions);
+            text_buffer_clear(&block);
+            in_block = false;
+            puts("definitions cleared");
+            continue;
+        }
+
+        if (in_block) {
+            text_buffer_append_line(&block, raw_line);
+            continue;
+        }
+
+        if (is_definition_start(raw_line)) {
+            text_buffer_append_line(&block, raw_line);
+            in_block = true;
+            continue;
+        }
+
+        if (is_directive(raw_line)) {
+            text_buffer_append_line(&definitions, raw_line);
+            continue;
+        }
+
+        if (run_line(line, definitions.data, serial++, &ctx)) {
             print_regs(&ctx);
         }
     }
 
+    if (in_block) {
+        commit_definition_block(&definitions, &block);
+    }
+
+    text_buffer_free(&definitions);
+    text_buffer_free(&block);
     munmap(scratch, SCRATCH_SIZE);
     return 0;
 }
