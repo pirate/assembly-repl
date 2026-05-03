@@ -1,10 +1,12 @@
 # assembly-repl 🧪
 
-A native ARM64 assembly REPL (for Apple Silicon macOS only at the moment).
+A native assembly REPL. Targets Apple Silicon macOS (`arm64`) and Linux
+(`x86_64`).
 
 Type assembly, run it directly on the CPU, and immediately see the register
 state that came back. You can enter single instructions or define normal
-assembly routines with labels and indentation, then call them later with `bl`.
+assembly routines with labels and indentation, then call them later with `bl`
+(arm64) or `call` (x86_64).
 
 This is an educational toy for learning assembly. It is not a sandbox, emulator,
 or production debugger. If you ask it to crash, loop forever, corrupt memory, or
@@ -13,28 +15,35 @@ jump into nonsense, it will probably do exactly that. 🔥
 ## What It Does ⚙️
 
 - Assembles each executable input with `clang`
-- Extracts the generated ARM64 machine code from the Mach-O object file
+- Extracts the generated machine code from the object file
+  (Mach-O `__TEXT,__text` on macOS, ELF `.text` on Linux)
 - Maps the bytes into executable memory
 - Calls the code inside the REPL process
 - Persists general-purpose registers between lines
 - Persists labels, directives, and routines between executions
-- Prints registers and `NZCV` flags after each instruction
+- Prints registers and arithmetic flags after each instruction
 
-The REPL starts with `x19` pointing at a writable scratch page and `x20`
-containing the scratch page size.
+On macOS arm64 the REPL starts with `x19` pointing at a writable scratch page
+and `x20` holding the scratch page size.
 
-## Requirements 🍎
+On Linux x86_64 the REPL uses Intel syntax, starts with `r15` pointing at the
+scratch page and `r14` holding the scratch page size.
 
+## Requirements
+
+macOS:
 - Apple Silicon Mac
-- `clang` at runtime, because the REPL assembles each input with Apple Clang
-- `make` only if building from source
+- `clang` at runtime (Apple Clang)
 
-This version targets Apple `arm64` Mach-O only.
+Linux:
+- x86_64 host
+- `clang` at runtime
+- `make` only if building from source
 
 ## Install 🚀
 
-The npm package bundles a prebuilt `darwin-arm64` binary. Installing it does not
-run `node-gyp`, `make`, or a native build.
+The npm package bundles prebuilt binaries for `darwin-arm64` and `linux-x64`.
+Installing it does not run `node-gyp`, `make`, or a native build.
 
 Run without installing globally:
 
@@ -73,6 +82,8 @@ make clean
 
 ## Quick Start ✨
 
+macOS arm64:
+
 ```text
 arm64 native assembly REPL. Type :help for commands.
 scratch: x19 = 0x0000000100abc000, x20 = 4096 bytes
@@ -85,6 +96,24 @@ x0  0x000000000000002a  ...
 asm> cmp x0, #42
 nzcv 0x0000000060000000 [nZCv]
 ```
+
+Linux x86_64 (Intel syntax):
+
+```text
+x86_64 native assembly REPL (Linux). Intel syntax. Type :help for commands.
+scratch: r15 = 0x00007f9c1c0fe000, r14 = 4096 bytes
+asm> mov rax, 41
+rax 0x0000000000000029  ...
+
+asm> add rax, 1
+rax 0x000000000000002a  ...
+
+asm> cmp rax, 42
+rflags 0x0000000000000246 [osZaPc]
+```
+
+The arithmetic flag legend on Linux is `OSZAPC` (overflow, sign, zero, aux,
+parity, carry), uppercase when set, lowercase when clear.
 
 ## Example: Registers 🧠
 
@@ -495,7 +524,7 @@ adds x0, x0, #1
 
 Both versions leave `x0` as `42`, but only `adds` updates `NZCV`.
 
-## Demo: Direct Syscalls 🧬
+## Demo: macOS Syscalls 🧬
 
 On macOS ARM64, a Unix syscall uses this basic convention:
 
@@ -644,6 +673,78 @@ arm64
 ```
 
 Like `exit`, this replaces the REPL process. Run it last.
+
+## Demo: Linux Syscalls 🐧
+
+On Linux x86_64 the syscall convention is:
+
+- `rax` holds the syscall number
+- `rdi`, `rsi`, `rdx`, `r10`, `r8`, `r9` hold the first six arguments
+- `syscall` enters the kernel
+- `rax` receives the return value (negative `errno` on error)
+- `rcx` and `r11` are clobbered (the kernel uses them for return state)
+
+A quick `getpid` looks like this:
+
+```asm
+mov rax, 39
+syscall
+```
+
+After the call, `rax` contains the REPL's pid.
+
+### Real-time scheduling: SCHED_FIFO
+
+Linux lets you switch a process to real-time scheduling with one syscall:
+`sched_setscheduler(pid, policy, &param)` (syscall `144`). With `policy =
+SCHED_FIFO (1)` and a non-zero priority, the task runs ahead of every normal
+`SCHED_OTHER` task on its CPU and is never preempted by them.
+
+This is the same mechanism JACK, PipeWire, and other audio stacks use to keep
+their callback threads from being interrupted by the rest of the system.
+
+Sharp edge: a real-time `SCHED_FIFO` task with a tight `while (1)` and no
+`sched_yield` can starve normal tasks on its CPU and make the system feel
+frozen. Linux's RT bandwidth throttle (see `/proc/sys/kernel/sched_rt_*`)
+limits this to ~95% of CPU time per second by default, but it is still rude.
+Requires `CAP_SYS_NICE` (or root).
+
+```asm
+# struct sched_param has one field: int sched_priority. We write it as a
+# 64-bit store at the start of the scratch page; the upper 32 bits land in
+# whatever padding the kernel ignores.
+mov rax, 50
+mov [r15], rax
+
+# sched_setscheduler(pid=0, policy=SCHED_FIFO, &param)
+mov rdi, 0
+mov rsi, 1
+mov rdx, r15
+mov rax, 144
+syscall
+```
+
+`rax` should be `0`. A non-zero negative value (e.g. `-1` = `-EPERM`) means
+the process lacked `CAP_SYS_NICE`.
+
+Read it back with `sched_getscheduler(0)` (syscall `145`):
+
+```asm
+mov rdi, 0
+mov rax, 145
+syscall
+```
+
+`rax` is now `1`, which is `SCHED_FIFO`. From outside the REPL you can confirm
+with `chrt -p <pid>`:
+
+```text
+pid 9228's current scheduling policy: SCHED_FIFO
+pid 9228's current scheduling priority: 50
+```
+
+To go back to normal scheduling, repeat the call with `policy = 0`
+(`SCHED_OTHER`) and `priority = 0`.
 
 ## Demo: Crash-As-A-Lesson Mode 💥
 
