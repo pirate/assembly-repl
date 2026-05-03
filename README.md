@@ -2,8 +2,9 @@
 
 An intentionally unsafe native ARM64 assembly REPL for Apple Silicon macOS.
 
-Type one line of assembly, run it directly on the CPU, and immediately see the
-register state that came back.
+Type assembly, run it directly on the CPU, and immediately see the register
+state that came back. You can enter single instructions or define normal
+assembly routines with labels and indentation, then call them later with `bl`.
 
 This is an educational toy for learning assembly. It is not a sandbox, emulator,
 or production debugger. If you ask it to crash, loop forever, corrupt memory, or
@@ -11,11 +12,12 @@ jump into nonsense, it will probably do exactly that. 🔥
 
 ## What It Does ⚙️
 
-- Assembles each input line with `clang`
+- Assembles each executable input with `clang`
 - Extracts the generated ARM64 machine code from the Mach-O object file
 - Maps the bytes into executable memory
 - Calls the code inside the REPL process
 - Persists general-purpose registers between lines
+- Persists labels, directives, and routines between executions
 - Prints registers and `NZCV` flags after each instruction
 
 The REPL starts with `x19` pointing at a writable scratch page and `x20`
@@ -101,6 +103,8 @@ asm> ldr x2, [x19, #8]
 - `:regs` prints the current register context
 - `:reset` zeroes registers and restores scratch pointers
 - `:scratch` prints the scratch memory address and size
+- `:defs` prints persisted labels, directives, and routines
+- `:clear` clears persisted labels, directives, and routines
 - `:quit` exits
 
 Short aliases:
@@ -109,9 +113,30 @@ Short aliases:
 - `:r` for `:regs`
 - `:q` for `:quit`
 
+## Example: Live Routines 🧩
+
+Directives at column 0 are persisted immediately. Labels at column 0 start
+persistent definition blocks. Indented lines belong to the current block. When
+you outdent, the block is committed and future input can call it.
+
+```text
+asm> _double:
+asm|   add x0, x0, x0
+asm|   ret
+asm| mov x0, #21
+definition block committed
+x0  0x0000000000000015  ...
+
+asm> bl _double
+x0  0x000000000000002a  ...
+```
+
+That is normal assembly shape: label at column 0, body indented, `ret` to return
+to the generated REPL wrapper.
+
 ## How It Works 🛠️
 
-For each input line, the REPL writes a tiny wrapper assembly file into
+For each executable input, the REPL writes a tiny wrapper assembly file into
 `.asmrepl-build/`, like this conceptually:
 
 ```asm
@@ -124,6 +149,10 @@ _asmrepl_entry:
   ; store user registers and NZCV flags back into reg_context_t
   ; restore host registers
   ret
+
+  ; persisted labels/directives/routines live down here
+  _some_routine:
+    ret
 ```
 
 Then it runs:
@@ -175,8 +204,8 @@ learning, but LLDB is useful when you intentionally try dangerous instructions.
 
 ## Pure Assembly: Addition + Multiplication Calculator ➕✖️
 
-Here is a tiny calculator written as standalone ARM64 assembly. Each operation
-is a dedicated callable routine:
+Here is a tiny calculator written live in the REPL. Each operation is a
+dedicated callable routine:
 
 - `_calc_add`: adds `x0 + x1`
 - `_calc_mul`: multiplies `x0 * x1`
@@ -188,79 +217,43 @@ The example computes:
 (7 + 35) * 2 = 84
 ```
 
-```asm
-// calculator.s
-// Apple arm64 calling convention:
-//   x0 = first argument / return value
-//   x1 = second argument
-//   bl = branch with link, used like a function call
-//   ret = return to the address in x30
+Paste this into the REPL:
 
-.text
+```asm
 .globl _calc_add
 .globl _calc_mul
 .globl _calculator_demo
 .p2align 2
 
-// uint64_t calc_add(uint64_t a, uint64_t b)
-// args:    x0 = a, x1 = b
-// returns: x0 = a + b
 _calc_add:
   add x0, x0, x1
   ret
 
-// uint64_t calc_mul(uint64_t a, uint64_t b)
-// args:    x0 = a, x1 = b
-// returns: x0 = a * b
 _calc_mul:
   mul x0, x0, x1
   ret
 
-// uint64_t calculator_demo(void)
-// returns: (7 + 35) * 2
 _calculator_demo:
-  stp x29, x30, [sp, #-16]!  // save frame pointer and return address
+  stp x29, x30, [sp, #-16]!
   mov x29, sp
-
-  mov x0, #7                 // first add argument
-  mov x1, #35                // second add argument
-  bl _calc_add               // x0 = calc_add(7, 35) = 42
-
-  mov x1, #2                 // second multiply argument
-  bl _calc_mul               // x0 = calc_mul(42, 2) = 84
-
-  ldp x29, x30, [sp], #16    // restore frame pointer and return address
+  mov x0, #7
+  mov x1, #35
+  bl _calc_add
+  mov x1, #2
+  bl _calc_mul
+  ldp x29, x30, [sp], #16
   ret
+
+bl _calculator_demo
 ```
 
-You can call the assembly from a tiny C program:
-
-```c
-// main.c
-#include <stdint.h>
-#include <stdio.h>
-
-extern uint64_t calculator_demo(void);
-
-int main(void) {
-    printf("%llu\n", (unsigned long long)calculator_demo());
-    return 0;
-}
-```
-
-Build and run:
-
-```sh
-clang calculator.s main.c -o calculator
-./calculator
-```
-
-Expected output:
+The final outdented `bl _calculator_demo` commits the `_calculator_demo` block,
+executes the call, and leaves the result in `x0`:
 
 ```text
-84
+x0  0x0000000000000054  ...
 ```
 
 The important pattern is that each operation follows the same small calling
 contract: put inputs in `x0` and `x1`, call the routine with `bl`, and read the
-result back from `x0`.
+result back from `x0`. The final `x0` value is `0x54`, which is decimal `84`.
