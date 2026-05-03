@@ -671,6 +671,21 @@ static char *trim_span(char *start, char *end) {
     return start;
 }
 
+static bool normalize_ir_opcode(const char *opcode, char *out, size_t out_size) {
+    size_t len = 0;
+    for (const char *p = opcode; *p && !isspace((unsigned char)*p); p++) {
+        if (!isalnum((unsigned char)*p)) {
+            return false;
+        }
+        if (len + 1 >= out_size) {
+            return false;
+        }
+        out[len++] = (char)tolower((unsigned char)*p);
+    }
+    out[len] = '\0';
+    return len > 0;
+}
+
 static bool parse_instruction_def_file(const char *path, ir_instruction_list_t *list) {
     size_t size = 0;
     char *data = read_text_file(path, &size);
@@ -685,7 +700,13 @@ static bool parse_instruction_def_file(const char *path, ir_instruction_list_t *
             *next++ = '\0';
         }
 
-        char *macro = strstr(line, "HANDLE_");
+        char *trimmed_line = trim_span(line, line + strlen(line));
+        if (strncmp(trimmed_line, "HANDLE_", 7) != 0) {
+            line = next;
+            continue;
+        }
+
+        char *macro = trimmed_line;
         char *open = macro ? strchr(macro, '(') : NULL;
         if (!macro || !open || !strstr(macro, "_INST")) {
             line = next;
@@ -702,15 +723,15 @@ static bool parse_instruction_def_file(const char *path, ir_instruction_list_t *
 
         char *first_comma = strchr(open + 1, ',');
         char *second_comma = first_comma ? strchr(first_comma + 1, ',') : NULL;
-        char *close = second_comma ? strchr(second_comma + 1, ')') : NULL;
-        if (!second_comma || !close) {
+        if (!first_comma || !second_comma) {
             line = next;
             continue;
         }
 
-        char *opcode = trim_span(second_comma + 1, close);
-        if (*opcode != '\0') {
-            ir_instruction_list_add(list, opcode, ir_instruction_summary_from_macro(macro_name, opcode));
+        char *opcode = trim_span(first_comma + 1, second_comma);
+        char normalized[64];
+        if (normalize_ir_opcode(opcode, normalized, sizeof(normalized))) {
+            ir_instruction_list_add(list, normalized, ir_instruction_summary_from_macro(macro_name, normalized));
         }
 
         line = next;
@@ -1580,6 +1601,14 @@ static repl_mode_t parse_mode(int argc, char **argv) {
 
 int main(int argc, char **argv) {
     repl_mode_t mode = parse_mode(argc, argv);
+
+#ifndef __APPLE__
+    if (mode == MODE_OBJC) {
+        fputs("objc-repl is only supported on macOS arm64. Objective-C snippets need the Apple Objective-C runtime and Foundation framework.\n", stderr);
+        return 1;
+    }
+#endif
+
     ensure_build_dir();
 
     repl_state_t state;

@@ -47,6 +47,11 @@ if (!ensureExecutable(binary)) {
     process.exit(1);
 }
 
+if (mode === 'objc' && process.platform !== 'darwin') {
+    console.error('objc-repl is only supported on macOS arm64. Objective-C snippets need the Apple Objective-C runtime and Foundation framework.');
+    process.exit(1);
+}
+
 const missingDependencies = runtimeDependencies.filter((dependency) => !commandAvailable(dependency.command));
 if (missingDependencies.length > 0) {
     printMissingDependencyError(commandName, missingDependencies);

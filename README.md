@@ -35,21 +35,21 @@ native build.
 Run without installing globally:
 
 ```sh
-npx assembly-repl
+npx assembly-repl  # Run assembly-repl without a global install.
 
 # or for any of the other repls, e.g. llvmir-repl:
-npx --package=assembly-repl llvmir-repl
+npx --package=assembly-repl llvmir-repl  # Run llvmir-repl from the same package.
 ```
 
 Or install globally:
 
 ```sh
-npm i -g assembly-repl
-assembly-repl
-c-repl
-cpp-repl
-objc-repl
-llvmir-repl
+npm i -g assembly-repl  # Install every REPL command globally.
+assembly-repl           # Start the native assembly REPL.
+c-repl                  # Start the C snippet REPL.
+cpp-repl                # Start the C++20 snippet REPL.
+objc-repl               # Start the Objective-C snippet REPL.
+llvmir-repl             # Start the LLVM IR snippet REPL.
 ```
 
 The native runners are prebuilt, but `clang` is still required at runtime because
@@ -60,22 +60,22 @@ the REPLs shell out to the compiler for the code you type.
 Every REPL prints its `:help` text at startup. You can ask for help again or
 look up a specific topic or instruction from the prompt:
 
-```bash
-:help
-:help <topic-or-instruction>
-:instructions                  # list all available instructions
+```text
+:help                         // Show the help screen for the current REPL.
+:help <topic-or-instruction>  // Show focused help for one topic or instruction.
+:instructions                 // List all available instructions.
 ```
 
 You can also add `?` after an instruction or topic:
 
 ```text
-asm> mov?
-asm> ldr?
-asm> add x0, x0, #1?
-c> state?
-cpp> template?
-objc> message?
-ir> getelementptr?
+asm> mov?                 // Show help for the ARM64 or x86_64 move instruction.
+asm> ldr?                 // Show help for ARM64 load-register forms.
+asm> add x0, x0, #1?      // Show help for the instruction at the start of the line.
+c> state?                 // Show help for the persistent C REPL state.
+cpp> template?            // Show help for reusable C++ template definitions.
+objc> message?            // Show help for Objective-C message sends.
+ir> getelementptr?        // Show help for the LLVM IR pointer instruction.
 ```
 
 ## `assembly-repl`
@@ -102,17 +102,17 @@ Assembly examples below use ARM64 syntax unless the heading explicitly says `x86
 ### `assembly-repl`: Quickstart
 
 ```bash
-npm i -g assembly-repl
-assembly-repl
+npm i -g assembly-repl  # Install the package globally.
+assembly-repl           # Start the assembly REPL.
 
-asm> :help
-asm> mov x0, #41
+asm> :help              // Show commands, compiler path, and instruction help syntax.
+asm> mov x0, #41        // Put 41 into x0.
 x0  0x0000000000000029  ...
 
-asm> add x0, x0, #1
+asm> add x0, x0, #1     // Add 1 to x0.
 x0  0x000000000000002a  ...
 
-asm> cmp x0, #42
+asm> cmp x0, #42        // Compare x0 with 42 and update NZCV flags.
 nzcv 0x0000000060000000 [nZCv]
 ```
 
@@ -126,9 +126,9 @@ commands, and instruction help syntax.
 Registers persist between lines:
 
 ```text
-asm> mov x0, #10
-asm> mov x1, #32
-asm> add x2, x0, x1
+asm> mov x0, #10        // Put 10 into x0.
+asm> mov x1, #32        // Put 32 into x1.
+asm> add x2, x0, x1     // Add x0 and x1, storing 42 in x2.
 ```
 
 After the final line, `x2` contains `42`.
@@ -136,7 +136,7 @@ After the final line, `x2` contains `42`.
 You can also inspect flags directly:
 
 ```text
-asm> cmp x0, #42
+asm> cmp x0, #42        // Compare x0 with 42 and update NZCV.
 nzcv 0x0000000060000000 [nZCv]
 ```
 
@@ -150,23 +150,23 @@ These examples call `getpid` and leave the pid in the normal return register.
 ARM64 macOS:
 
 ```asm
-movz x16, #20
-movk x16, #0x200, lsl #16
-svc #0x80
+movz x16, #20                 // Load the Darwin getpid syscall number low bits.
+movk x16, #0x200, lsl #16     // Add the Unix syscall class bits.
+svc #0x80                     // Enter the kernel; pid returns in x0.
 ```
 
 ARM64 Linux:
 
 ```asm
-mov x8, #172
-svc #0
+mov x8, #172                  // Load the Linux arm64 getpid syscall number.
+svc #0                        // Enter the kernel; pid returns in x0.
 ```
 
 x86_64 Linux:
 
 ```asm
-mov rax, 39
-syscall
+mov rax, 39                   // Load the Linux x86_64 getpid syscall number.
+syscall                       // Enter the kernel; pid returns in rax.
 ```
 
 </details>
@@ -178,14 +178,14 @@ persistent definition blocks. Indented lines belong to the current block. When
 you outdent, the block is committed and future input can call it.
 
 ```text
-asm> _double:
-asm|   add x0, x0, x0
-asm|   ret
-asm| mov x0, #21
+asm> _double:                 // Start a persisted routine named _double.
+asm|   add x0, x0, x0         // Double the argument in x0.
+asm|   ret                    // Return to the generated REPL wrapper.
+asm| mov x0, #21              // Outdent to commit the block, then put 21 in x0.
 definition block committed
 x0  0x0000000000000015  ...
 
-asm> bl _double
+asm> bl _double               // Call the persisted routine.
 x0  0x000000000000002a  ...
 ```
 
@@ -205,31 +205,31 @@ This computes:
 Paste this into `assembly-repl`:
 
 ```asm
-.globl _calc_add
-.globl _calc_mul
-.globl _calculator_demo
-.p2align 2
+.globl _calc_add              // Export the add routine label.
+.globl _calc_mul              // Export the multiply routine label.
+.globl _calculator_demo       // Export the demo routine label.
+.p2align 2                    // Align the following functions.
 
-_calc_add:
-  add x0, x0, x1
-  ret
+_calc_add:                    // x0 = x0 + x1.
+  add x0, x0, x1              // Add the two input registers.
+  ret                         // Return with the sum in x0.
 
-_calc_mul:
-  mul x0, x0, x1
-  ret
+_calc_mul:                    // x0 = x0 * x1.
+  mul x0, x0, x1              // Multiply the two input registers.
+  ret                         // Return with the product in x0.
 
-_calculator_demo:
-  stp x29, x30, [sp, #-16]!
-  mov x29, sp
-  mov x0, #7
-  mov x1, #35
-  bl _calc_add
-  mov x1, #2
-  bl _calc_mul
-  ldp x29, x30, [sp], #16
-  ret
+_calculator_demo:             // Compute (7 + 35) * 2.
+  stp x29, x30, [sp, #-16]!   // Save frame pointer and link register.
+  mov x29, sp                 // Establish a frame pointer.
+  mov x0, #7                  // First add input.
+  mov x1, #35                 // Second add input.
+  bl _calc_add                // x0 becomes 42.
+  mov x1, #2                  // Set the multiply input.
+  bl _calc_mul                // x0 becomes 84.
+  ldp x29, x30, [sp], #16     // Restore frame pointer and link register.
+  ret                         // Return to the caller.
 
-bl _calculator_demo
+bl _calculator_demo           // Run the calculator demo.
 ```
 
 The result is left in `x0` as `0x54`, decimal `84`.
@@ -255,16 +255,16 @@ without `%` register prefixes.
 Two short x86_64 examples — register persistence and a routine call:
 
 ```text
-asm> mov rax, 10
-asm> mov rcx, 32
-asm> add rax, rcx        # rax = 42
+asm> mov rax, 10         // Put 10 into rax.
+asm> mov rcx, 32         // Put 32 into rcx.
+asm> add rax, rcx        // Add rcx into rax, leaving 42 in rax.
 
-asm> square:
-asm|   imul rdi, rdi
-asm|   mov rax, rdi
-asm|   ret
-asm> mov rdi, 12
-asm> call square         # rax = 144
+asm> square:             // Start a persisted routine named square.
+asm|   imul rdi, rdi     // Square the input argument in rdi.
+asm|   mov rax, rdi      // Move the return value into rax.
+asm|   ret               // Return to the generated REPL wrapper.
+asm> mov rdi, 12         // Put the argument 12 in rdi.
+asm> call square         // Call square, leaving 144 in rax.
 ```
 
 For a complete x86_64 demo see *`assembly-repl`: x86_64 Linux Syscalls* below,
@@ -277,9 +277,9 @@ including a working real-time scheduling switch.
 Registers persist between lines:
 
 ```text
-asm> mov x0, #10
-asm> mov x1, #32
-asm> add x2, x0, x1
+asm> mov x0, #10        // Put 10 into x0.
+asm> mov x1, #32        // Put 32 into x1.
+asm> add x2, x0, x1     // Add x0 and x1, storing 42 in x2.
 ```
 
 After the final line, `x2` contains `42`.
@@ -291,9 +291,9 @@ After the final line, `x2` contains `42`.
 `x19` points at a writable scratch page:
 
 ```text
-asm> mov x0, #123
-asm> str x0, [x19]
-asm> ldr x1, [x19]
+asm> mov x0, #123       // Put 123 into x0.
+asm> str x0, [x19]      // Store x0 at the start of scratch memory.
+asm> ldr x1, [x19]      // Load that scratch value into x1.
 ```
 
 After the final line, `x1` contains `123`.
@@ -301,9 +301,9 @@ After the final line, `x1` contains `123`.
 You can use offsets too:
 
 ```text
-asm> mov x0, #7
-asm> str x0, [x19, #8]
-asm> ldr x2, [x19, #8]
+asm> mov x0, #7         // Put 7 into x0.
+asm> str x0, [x19, #8]  // Store x0 eight bytes into scratch memory.
+asm> ldr x2, [x19, #8]  // Load that offset value into x2.
 ```
 
 </details>
@@ -313,16 +313,16 @@ asm> ldr x2, [x19, #8]
 Use `cmp`, `adds`, and `subs` to watch the `NZCV` flags change.
 
 ```asm
-mov x0, #-1
-adds x0, x0, #1
+mov x0, #-1             // Put -1 into x0.
+adds x0, x0, #1         // Add 1 and update NZCV flags.
 ```
 
 `adds` writes the arithmetic result to `x0` and updates flags. After adding
 `-1 + 1`, `x0` is zero and the `Z` flag is set.
 
 ```asm
-mov x0, #5
-subs x1, x0, #10
+mov x0, #5              // Put 5 into x0.
+subs x1, x0, #10        // Subtract 10, store -5 in x1, and update flags.
 ```
 
 This leaves a negative result in `x1`, so the `N` flag is set.
@@ -335,12 +335,12 @@ Apple ARM64 passes the first integer arguments in `x0`, `x1`, `x2`, and so on.
 Return values come back in `x0`.
 
 ```asm
-square:
-  mul x0, x0, x0
-  ret
+square:                 // Define a routine that squares x0.
+  mul x0, x0, x0        // Multiply x0 by itself.
+  ret                   // Return with the result in x0.
 
-mov x0, #12
-bl square
+mov x0, #12             // Put the argument 12 in x0.
+bl square               // Call square.
 ```
 
 After the call, `x0` contains `144`.
@@ -352,15 +352,15 @@ After the call, `x0` contains `144`.
 This routine uses a conventional frame pointer and return-address save/restore.
 
 ```asm
-increment_with_frame:
-  stp x29, x30, [sp, #-16]!
-  mov x29, sp
-  add x0, x0, #1
-  ldp x29, x30, [sp], #16
-  ret
+increment_with_frame:        // Define a routine that increments x0.
+  stp x29, x30, [sp, #-16]!  // Save frame pointer and link register.
+  mov x29, sp                // Establish a frame pointer.
+  add x0, x0, #1             // Increment x0.
+  ldp x29, x30, [sp], #16    // Restore frame pointer and link register.
+  ret                        // Return with the incremented value.
 
-mov x0, #41
-bl increment_with_frame
+mov x0, #41                  // Put the argument 41 in x0.
+bl increment_with_frame      // Call the routine.
 ```
 
 Watch `sp`, `x29`, and `x30` in the register dump to see the call machinery.
@@ -372,13 +372,13 @@ Watch `sp`, `x29`, and `x30` in the register dump to see the call machinery.
 `x19` points at a writable scratch page. Use it like a tiny heap.
 
 ```asm
-mov x0, #10
-str x0, [x19]
-mov x0, #20
-str x0, [x19, #8]
-ldr x1, [x19]
-ldr x2, [x19, #8]
-add x3, x1, x2
+mov x0, #10             // Put 10 into x0.
+str x0, [x19]           // Store 10 at scratch[0].
+mov x0, #20             // Put 20 into x0.
+str x0, [x19, #8]       // Store 20 at scratch[8].
+ldr x1, [x19]           // Load scratch[0] into x1.
+ldr x2, [x19, #8]       // Load scratch[8] into x2.
+add x3, x1, x2          // Add both loaded values into x3.
 ```
 
 After the final line, `x3` contains `30`.
@@ -397,42 +397,42 @@ This toy bytecode format uses pairs of 64-bit words:
 - opcode `0`: halt
 
 ```asm
-run_tiny_vm:
-  mov x1, x19
-  mov x0, #0
-vm_loop:
-  ldr x2, [x1], #8
-  cbz x2, vm_done
-  ldr x3, [x1], #8
-  cmp x2, #1
-  b.eq vm_add
-  cmp x2, #2
-  b.eq vm_mul
-  b vm_done
-vm_add:
-  add x0, x0, x3
-  b vm_loop
-vm_mul:
-  mul x0, x0, x3
-  b vm_loop
-vm_done:
-  ret
+run_tiny_vm:            // Interpret opcode/value pairs from scratch memory.
+  mov x1, x19           // Point x1 at the scratch bytecode stream.
+  mov x0, #0            // Start the accumulator at 0.
+vm_loop:                // Begin the interpreter loop.
+  ldr x2, [x1], #8      // Load the next opcode and advance the stream.
+  cbz x2, vm_done       // Opcode 0 halts.
+  ldr x3, [x1], #8      // Load the opcode operand.
+  cmp x2, #1            // Check for add-immediate.
+  b.eq vm_add           // Branch to add handler.
+  cmp x2, #2            // Check for multiply-immediate.
+  b.eq vm_mul           // Branch to multiply handler.
+  b vm_done             // Unknown opcode halts.
+vm_add:                 // Add handler.
+  add x0, x0, x3        // Add operand into accumulator.
+  b vm_loop             // Continue interpreting.
+vm_mul:                 // Multiply handler.
+  mul x0, x0, x3        // Multiply accumulator by operand.
+  b vm_loop             // Continue interpreting.
+vm_done:                // Halt handler.
+  ret                   // Return with accumulator in x0.
 
-mov x0, #1
-str x0, [x19]
-mov x0, #7
-str x0, [x19, #8]
-mov x0, #1
-str x0, [x19, #16]
-mov x0, #35
-str x0, [x19, #24]
-mov x0, #2
-str x0, [x19, #32]
-mov x0, #2
-str x0, [x19, #40]
-mov x0, #0
-str x0, [x19, #48]
-bl run_tiny_vm
+mov x0, #1              // Write opcode 1: add.
+str x0, [x19]           // Store opcode at scratch[0].
+mov x0, #7              // Write operand 7.
+str x0, [x19, #8]       // Store operand at scratch[8].
+mov x0, #1              // Write opcode 1: add.
+str x0, [x19, #16]      // Store opcode at scratch[16].
+mov x0, #35             // Write operand 35.
+str x0, [x19, #24]      // Store operand at scratch[24].
+mov x0, #2              // Write opcode 2: multiply.
+str x0, [x19, #32]      // Store opcode at scratch[32].
+mov x0, #2              // Write operand 2.
+str x0, [x19, #40]      // Store operand at scratch[40].
+mov x0, #0              // Write opcode 0: halt.
+str x0, [x19, #48]      // Store halt opcode at scratch[48].
+bl run_tiny_vm          // Run the interpreter.
 ```
 
 The bytecode computes `(0 + 7 + 35) * 2`, so `x0` ends as `84`.
@@ -445,25 +445,25 @@ Recursion works as long as you preserve the link register and any values you
 need after recursive calls.
 
 ```asm
-factorial:
-  stp x29, x30, [sp, #-32]!
-  mov x29, sp
-  str x0, [sp, #16]
-  cmp x0, #1
-  b.le factorial_base
-  sub x0, x0, #1
-  bl factorial
-  ldr x1, [sp, #16]
-  mul x0, x0, x1
-  b factorial_done
-factorial_base:
-  mov x0, #1
-factorial_done:
-  ldp x29, x30, [sp], #32
-  ret
+factorial:                    // Define recursive factorial(x0).
+  stp x29, x30, [sp, #-32]!   // Save frame pointer and link register.
+  mov x29, sp                 // Establish a frame pointer.
+  str x0, [sp, #16]           // Save the current n.
+  cmp x0, #1                  // Check whether n <= 1.
+  b.le factorial_base         // Use the base case for n <= 1.
+  sub x0, x0, #1              // Prepare n - 1 for the recursive call.
+  bl factorial                // Compute factorial(n - 1).
+  ldr x1, [sp, #16]           // Reload n.
+  mul x0, x0, x1              // Multiply factorial(n - 1) by n.
+  b factorial_done            // Skip the base-case assignment.
+factorial_base:               // Base case.
+  mov x0, #1                  // Return 1.
+factorial_done:               // Shared function epilogue.
+  ldp x29, x30, [sp], #32     // Restore frame pointer and link register.
+  ret                         // Return with factorial result in x0.
 
-mov x0, #5
-bl factorial
+mov x0, #5                    // Put the input 5 in x0.
+bl factorial                  // Compute factorial(5).
 ```
 
 After the call, `x0` contains `120`.
@@ -475,16 +475,16 @@ After the call, `x0` contains `120`.
 Build small control-flow routines and call them with different inputs.
 
 ```asm
-max:
-  cmp x0, x1
-  b.ge max_done
-  mov x0, x1
-max_done:
-  ret
+max:                    // Define max(x0, x1).
+  cmp x0, x1            // Compare the two inputs.
+  b.ge max_done         // Keep x0 when it is already >= x1.
+  mov x0, x1            // Otherwise copy x1 into the return register.
+max_done:               // Shared return point.
+  ret                   // Return with the larger value in x0.
 
-mov x0, #17
-mov x1, #42
-bl max
+mov x0, #17             // First input.
+mov x1, #42             // Second input.
+bl max                  // Compute the larger value.
 ```
 
 After the call, `x0` contains the larger value.
@@ -497,24 +497,24 @@ Use the REPL like a live assembly notebook. Define a few reusable routines, then
 compose them interactively.
 
 ```asm
-add3:
-  add x0, x0, x1
-  add x0, x0, x2
-  ret
+add3:                   // Define add3(x0, x1, x2).
+  add x0, x0, x1        // Add x1 into x0.
+  add x0, x0, x2        // Add x2 into x0.
+  ret                   // Return with the sum in x0.
 
-clamp_min:
-  cmp x0, x1
-  b.ge clamp_min_done
-  mov x0, x1
-clamp_min_done:
-  ret
+clamp_min:              // Define clamp_min(value=x0, minimum=x1).
+  cmp x0, x1            // Compare value with minimum.
+  b.ge clamp_min_done   // Keep value if it is already high enough.
+  mov x0, x1            // Otherwise return the minimum.
+clamp_min_done:         // Shared return point.
+  ret                   // Return with the clamped value in x0.
 
-mov x0, #5
-mov x1, #10
-mov x2, #20
-bl add3
-mov x1, #40
-bl clamp_min
+mov x0, #5              // First add input.
+mov x1, #10             // Second add input.
+mov x2, #20             // Third add input.
+bl add3                 // x0 becomes 35.
+mov x1, #40             // Set the minimum to 40.
+bl clamp_min            // Raise x0 to 40.
 ```
 
 `add3` produces `35`; `clamp_min` then raises that to `40`.
@@ -526,16 +526,16 @@ bl clamp_min
 Some instructions produce the same register result but differ in side effects.
 
 ```asm
-mov x0, #41
-add x0, x0, #1
+mov x0, #41             // Put 41 into x0.
+add x0, x0, #1          // Add 1 without updating NZCV.
 ```
 
 Now reset and try the flag-setting form:
 
 ```asm
-:reset
-mov x0, #41
-adds x0, x0, #1
+:reset                  // Reset registers and flags.
+mov x0, #41             // Put 41 into x0 again.
+adds x0, x0, #1         // Add 1 and update NZCV.
 ```
 
 Both versions leave `x0` as `42`, but only `adds` updates `NZCV`.
@@ -562,19 +562,19 @@ This calls `open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644)`. The returned file
 descriptor is left in `x0`.
 
 ```asm
-open_demo:
-  adr x0, open_path
-  mov x1, #0x601
-  mov x2, #420
-  movz x16, #5
-  movk x16, #0x200, lsl #16
-  svc #0x80
-  ret
+open_demo:                         // Define a routine that calls open(...).
+  adr x0, open_path                // x0 points at the path string.
+  mov x1, #0x601                   // x1 = O_WRONLY | O_CREAT | O_TRUNC.
+  mov x2, #420                     // x2 = 0644 file mode.
+  movz x16, #5                     // Load SYS_open low bits.
+  movk x16, #0x200, lsl #16        // Add Darwin Unix syscall class bits.
+  svc #0x80                        // Enter the kernel.
+  ret                              // Return with fd or errno in x0.
 
-open_path:
-  .asciz ".asmrepl-open-demo.txt"
+open_path:                         // Store the file path beside the code.
+  .asciz ".asmrepl-open-demo.txt"   // Null-terminated path string.
 
-bl open_demo
+bl open_demo                       // Call the open demo.
 ```
 
 The flags are `O_WRONLY` (`0x1`), `O_CREAT` (`0x200`), and `O_TRUNC` (`0x400`).
@@ -585,23 +585,23 @@ This calls `mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON,
 -1, 0)`, writes `42` into the returned mapping, and loads it back into `x2`.
 
 ```asm
-mmap_demo:
-  mov x0, #0
-  mov x1, #4096
-  mov x2, #3
-  mov x3, #0x1002
-  mov x4, #-1
-  mov x5, #0
-  movz x16, #197
-  movk x16, #0x200, lsl #16
-  svc #0x80
-  mov x21, x0
-  mov x1, #42
-  str x1, [x21]
-  ldr x2, [x21]
-  ret
+mmap_demo:                    // Define a routine that calls mmap(...).
+  mov x0, #0                  // addr = NULL.
+  mov x1, #4096               // length = 4096.
+  mov x2, #3                  // prot = PROT_READ | PROT_WRITE.
+  mov x3, #0x1002             // flags = MAP_PRIVATE | MAP_ANON.
+  mov x4, #-1                 // fd = -1.
+  mov x5, #0                  // offset = 0.
+  movz x16, #197              // Load SYS_mmap low bits.
+  movk x16, #0x200, lsl #16   // Add Darwin Unix syscall class bits.
+  svc #0x80                   // Enter the kernel.
+  mov x21, x0                 // Save the mapped address.
+  mov x1, #42                 // Prepare a test value.
+  str x1, [x21]               // Store 42 into the mapping.
+  ldr x2, [x21]               // Load the value back into x2.
+  ret                         // Return to the REPL wrapper.
 
-bl mmap_demo
+bl mmap_demo                  // Call the mmap demo.
 ```
 
 After the call, `x21` contains the mapped address and `x2` contains `42`.
@@ -613,21 +613,21 @@ and `x1 = 0`; the child returns with `x1 = 1`. The child immediately calls
 `exit(0)` so it does not become a second REPL reading from the same terminal.
 
 ```asm
-fork_demo:
-  movz x16, #2
-  movk x16, #0x200, lsl #16
-  svc #0x80
-  cbnz x1, fork_child
-  ret
+fork_demo:                    // Define a routine that calls fork().
+  movz x16, #2                // Load SYS_fork low bits.
+  movk x16, #0x200, lsl #16   // Add Darwin Unix syscall class bits.
+  svc #0x80                   // Enter the kernel.
+  cbnz x1, fork_child         // Child returns with x1 = 1.
+  ret                         // Parent returns to the REPL.
 
-fork_child:
-  mov x0, #0
-  movz x16, #1
-  movk x16, #0x200, lsl #16
-  svc #0x80
-  ret
+fork_child:                   // Child-process path.
+  mov x0, #0                  // Exit status 0.
+  movz x16, #1                // Load SYS_exit low bits.
+  movk x16, #0x200, lsl #16   // Add Darwin Unix syscall class bits.
+  svc #0x80                   // Terminate the child process.
+  ret                         // Unreached unless exit fails.
 
-bl fork_demo
+bl fork_demo                  // Call the fork demo.
 ```
 
 #### exit
@@ -635,14 +635,14 @@ bl fork_demo
 This terminates the REPL process with exit status `42`.
 
 ```asm
-exit_demo:
-  mov x0, #42
-  movz x16, #1
-  movk x16, #0x200, lsl #16
-  svc #0x80
-  ret
+exit_demo:                    // Define a routine that calls exit(42).
+  mov x0, #42                 // Exit status.
+  movz x16, #1                // Load SYS_exit low bits.
+  movk x16, #0x200, lsl #16   // Add Darwin Unix syscall class bits.
+  svc #0x80                   // Terminate the process.
+  ret                         // Unreached unless exit fails.
 
-bl exit_demo
+bl exit_demo                  // Call exit_demo; this ends the REPL.
 ```
 
 Run this one last. It does exactly what it says.
@@ -653,34 +653,34 @@ This calls `execve("/bin/bash", argv, NULL)` and replaces the REPL process with
 Bash. The `argv` array is built in scratch memory at `x19`.
 
 ```asm
-exec_bash_demo:
-  adr x0, bash_path
+exec_bash_demo:                         // Define a routine that calls execve(...).
+  adr x0, bash_path                     // x0 points at "/bin/bash".
 
-  adr x3, bash_path
-  str x3, [x19]
-  adr x3, bash_arg_c
-  str x3, [x19, #8]
-  adr x3, bash_script
-  str x3, [x19, #16]
-  str xzr, [x19, #24]
+  adr x3, bash_path                     // Load argv[0] address.
+  str x3, [x19]                         // Store argv[0] in scratch.
+  adr x3, bash_arg_c                    // Load argv[1] address.
+  str x3, [x19, #8]                     // Store argv[1] in scratch.
+  adr x3, bash_script                   // Load argv[2] address.
+  str x3, [x19, #16]                    // Store argv[2] in scratch.
+  str xzr, [x19, #24]                   // Store the terminating NULL pointer.
 
-  mov x1, x19
-  mov x2, #0
-  movz x16, #59
-  movk x16, #0x200, lsl #16
-  svc #0x80
-  ret
+  mov x1, x19                           // x1 points at argv.
+  mov x2, #0                            // x2 = envp NULL.
+  movz x16, #59                         // Load SYS_execve low bits.
+  movk x16, #0x200, lsl #16             // Add Darwin Unix syscall class bits.
+  svc #0x80                             // Replace this process with bash.
+  ret                                   // Unreached unless execve fails.
 
-bash_path:
-  .asciz "/bin/bash"
+bash_path:                              // Store argv[0] string.
+  .asciz "/bin/bash"                    // Null-terminated bash path.
 
-bash_arg_c:
-  .asciz "-c"
+bash_arg_c:                             // Store argv[1] string.
+  .asciz "-c"                           // Ask bash to run a command string.
 
-bash_script:
-  .asciz "echo hello from assembly exec; uname -m"
+bash_script:                            // Store argv[2] string.
+  .asciz "echo hello from assembly exec; uname -m"  // Command run by bash.
 
-bl exec_bash_demo
+bl exec_bash_demo                       // Call execve; this replaces the REPL.
 ```
 
 Expected output:
@@ -707,8 +707,8 @@ On Linux x86_64 the syscall convention is:
 A quick `getpid` looks like this:
 
 ```asm
-mov rax, 39
-syscall
+mov rax, 39                   // Load the Linux x86_64 getpid syscall number.
+syscall                       // Enter the kernel; pid returns in rax.
 ```
 
 After the call, `rax` contains the REPL's pid.
@@ -730,18 +730,14 @@ limits this to ~95% of CPU time per second by default, but it is still rude.
 Requires `CAP_SYS_NICE` (or root).
 
 ```asm
-# struct sched_param has one field: int sched_priority. We write it as a
-# 64-bit store at the start of the scratch page; the upper 32 bits land in
-# whatever padding the kernel ignores.
-mov rax, 50
-mov [r15], rax
+mov rax, 50       // Use priority 50 for struct sched_param.sched_priority.
+mov [r15], rax    // Store the priority at the start of scratch memory.
 
-# sched_setscheduler(pid=0, policy=SCHED_FIFO, &param)
-mov rdi, 0
-mov rsi, 1
-mov rdx, r15
-mov rax, 144
-syscall
+mov rdi, 0        // pid = 0 means the current process.
+mov rsi, 1        // policy = SCHED_FIFO.
+mov rdx, r15      // param points at scratch memory.
+mov rax, 144      // syscall number = sched_setscheduler.
+syscall           // Enter the kernel.
 ```
 
 `rax` should be `0`. A non-zero negative value (e.g. `-1` = `-EPERM`) means
@@ -750,9 +746,9 @@ the process lacked `CAP_SYS_NICE`.
 Read it back with `sched_getscheduler(0)` (syscall `145`):
 
 ```asm
-mov rdi, 0
-mov rax, 145
-syscall
+mov rdi, 0        // pid = 0 means the current process.
+mov rax, 145      // syscall number = sched_getscheduler.
+syscall           // Enter the kernel; policy returns in rax.
 ```
 
 `rax` is now `1`, which is `SCHED_FIFO`. From outside the REPL you can confirm
@@ -776,14 +772,14 @@ balanced stack changes, and correct return addresses matter.
 This may crash the REPL:
 
 ```asm
-mov x0, #0
-ldr x1, [x0]
+mov x0, #0        // Put a null pointer in x0.
+ldr x1, [x0]      // Try to read through it, usually crashing.
 ```
 
 So can this:
 
 ```asm
-sub sp, sp, #16
+sub sp, sp, #16   // Move the stack pointer without restoring it.
 ```
 
 Those failures are useful when you want to see what bad assembly does to a real
@@ -809,9 +805,9 @@ You can also add `?` after an instruction mnemonic to show help without
 executing anything:
 
 ```text
-asm> mov?
-asm> ldr?
-asm> add x0, x0, #1?
+asm> mov?                 // Show help for move instructions.
+asm> ldr?                 // Show help for ARM64 loads.
+asm> add x0, x0, #1?      // Show help for the instruction at the start of the line.
 ```
 
 Short aliases:
@@ -847,13 +843,13 @@ then recompiles and executes the whole body. It exposes `%state`, whose type is
 ### `llvmir-repl`: Quickstart
 
 ```bash
-npm i -g assembly-repl
-llvmir-repl
+npm i -g assembly-repl  # Install the package globally.
+llvmir-repl             # Start the LLVM IR REPL.
 
-ir> :help
-ir> %x = add i64 40, 2
-ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4
-ir> store i64 %x, ptr %result
+ir> :help                                                       ; Show commands and LLVM IR help topics.
+ir> %x = add i64 40, 2                                         ; Compute 40 + 2.
+ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4 ; Point at state->result.
+ir> store i64 %x, ptr %result                                  ; Store 42 as the printed result.
 result 0x000000000000002a (42)
 ```
 
@@ -865,9 +861,9 @@ Do inline integer arithmetic, then store into field 4 of `%repl_state` to update
 the printed result:
 
 ```text
-ir> %x = add i64 40, 2
-ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4
-ir> store i64 %x, ptr %result
+ir> %x = add i64 40, 2                                         ; Compute 40 + 2.
+ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4 ; Point at state->result.
+ir> store i64 %x, ptr %result                                  ; Store 42 as the printed result.
 result 0x000000000000002a (42)
 ```
 
@@ -879,14 +875,14 @@ This calls the platform C library's `getpid` entry point, avoiding OS-specific r
 syscall numbers in the IR:
 
 ```text
-ir> :def
-ir| declare i32 @getpid()
-ir| :end
+ir> :def                                                       ; Start a persisted declaration block.
+ir| declare i32 @getpid()                                      ; Declare the C library getpid function.
+ir| :end                                                       ; Commit the declaration block.
 definition block committed
-ir> %pid32 = call i32 @getpid()
-ir> %pid = zext i32 %pid32 to i64
-ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4
-ir> store i64 %pid, ptr %result
+ir> %pid32 = call i32 @getpid()                                ; Call getpid and receive an i32 pid.
+ir> %pid = zext i32 %pid32 to i64                              ; Widen the pid to i64.
+ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4 ; Point at state->result.
+ir> store i64 %pid, ptr %result                                ; Store the pid as the printed result.
 result 0x0000000000001234 (4660)
 ```
 
@@ -897,17 +893,17 @@ The exact process id will be different on your machine.
 <details><summary><h4><code>llvmir-repl</code>: Defining a Reusable Function</h4></summary>
 
 ```text
-ir> :def
-ir| define i64 @twice(i64 %x) {
-ir| entry:
-ir|   %r = mul i64 %x, 2
-ir|   ret i64 %r
-ir| }
-ir| :end
+ir> :def                                                       ; Start a persisted function block.
+ir| define i64 @twice(i64 %x) {                                ; Define twice(x).
+ir| entry:                                                     ; Start the function entry block.
+ir|   %r = mul i64 %x, 2                                       ; Multiply the argument by 2.
+ir|   ret i64 %r                                               ; Return the doubled value.
+ir| }                                                          ; End the function definition.
+ir| :end                                                       ; Commit the function block.
 definition block committed
-ir> %v = call i64 @twice(i64 21)
-ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4
-ir> store i64 %v, ptr %result
+ir> %v = call i64 @twice(i64 21)                               ; Call twice(21).
+ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4 ; Point at state->result.
+ir> store i64 %v, ptr %result                                  ; Store 42 as the printed result.
 result 0x000000000000002a (42)
 ```
 
@@ -922,23 +918,23 @@ This computes:
 ```
 
 ```text
-ir> :def
-ir| define i64 @calc_add(i64 %a, i64 %b) {
-ir| entry:
-ir|   %r = add i64 %a, %b
-ir|   ret i64 %r
-ir| }
-ir| define i64 @calc_mul(i64 %a, i64 %b) {
-ir| entry:
-ir|   %r = mul i64 %a, %b
-ir|   ret i64 %r
-ir| }
-ir| :end
+ir> :def                                                       ; Start a persisted function block.
+ir| define i64 @calc_add(i64 %a, i64 %b) {                     ; Define calc_add(a, b).
+ir| entry:                                                     ; Start calc_add's entry block.
+ir|   %r = add i64 %a, %b                                      ; Add the two arguments.
+ir|   ret i64 %r                                               ; Return the sum.
+ir| }                                                          ; End calc_add.
+ir| define i64 @calc_mul(i64 %a, i64 %b) {                     ; Define calc_mul(a, b).
+ir| entry:                                                     ; Start calc_mul's entry block.
+ir|   %r = mul i64 %a, %b                                      ; Multiply the two arguments.
+ir|   ret i64 %r                                               ; Return the product.
+ir| }                                                          ; End calc_mul.
+ir| :end                                                       ; Commit both functions.
 definition block committed
-ir> %sum = call i64 @calc_add(i64 7, i64 35)
-ir> %product = call i64 @calc_mul(i64 %sum, i64 2)
-ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4
-ir> store i64 %product, ptr %result
+ir> %sum = call i64 @calc_add(i64 7, i64 35)                   ; Compute 7 + 35.
+ir> %product = call i64 @calc_mul(i64 %sum, i64 2)             ; Multiply the sum by 2.
+ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4 ; Point at state->result.
+ir> store i64 %product, ptr %result                            ; Store 84 as the printed result.
 result 0x0000000000000054 (84)
 ```
 
@@ -949,7 +945,7 @@ result 0x0000000000000054 (84)
 Persistent state:
 
 ```llvm
-%repl_state = type { [16 x i64], [16 x double], [4096 x i8], [4096 x i8], i64 }
+%repl_state = type { [16 x i64], [16 x double], [4096 x i8], [4096 x i8], i64 } ; Persistent REPL state layout.
 ```
 
 Field 4 of `%repl_state` updates the printed result.
@@ -976,9 +972,9 @@ Commands:
 `c-repl` compiles each input as C inside:
 
 ```c
-void repl_entry(repl_state_t *state) {
-    /* your snippet */
-}
+void repl_entry(repl_state_t *state) {  /* Generated entry point for one C snippet. */
+    /* your snippet */  /* Each c-repl line runs inside this function. */
+}  /* Returning hands control back to the REPL. */
 ```
 
 Use it for C expressions, pointer experiments, small helper functions, and
@@ -987,11 +983,11 @@ shared-library-level behavior while keeping persistent state between snippets.
 ### `c-repl`: Quickstart
 
 ```bash
-npm i -g assembly-repl
-c-repl
+npm i -g assembly-repl  # Install the package globally.
+c-repl                  # Start the C REPL.
 
-c> :help
-c> U(0) = 40 + 2; state->result = U(0);
+c> :help                                      // Show commands and C help topics.
+c> U(0) = 40 + 2; state->result = U(0);       // Compute 42 and store it as the printed result.
 result 0x000000000000002a (42)
 ```
 
@@ -1000,8 +996,8 @@ result 0x000000000000002a (42)
 <details><summary><h4><code>c-repl</code>: Basics</h4></summary>
 
 ```text
-c> U(0) = 41;
-c> U(0) += 1; state->result = U(0);
+c> U(0) = 41;                                 // Store 41 in persistent integer slot 0.
+c> U(0) += 1; state->result = U(0);           // Increment the slot and publish the result.
 result 0x000000000000002a (42)
 ```
 
@@ -1010,9 +1006,9 @@ result 0x000000000000002a (42)
 <details><summary><h4><code>c-repl</code>: Making a System Call</h4></summary>
 
 ```text
-c> #include <unistd.h>
+c> #include <unistd.h>                        // Persist the getpid declaration.
 directive persisted
-c> state->result = (uint64_t)getpid();
+c> state->result = (uint64_t)getpid();        // Call getpid and publish the pid.
 result 0x0000000000001234 (4660)
 ```
 
@@ -1025,11 +1021,11 @@ The exact process id will be different on your machine.
 Top-level function definitions are persisted after the closing brace:
 
 ```text
-c> static uint64_t twice(uint64_t x) {
-c|   return x * 2;
-c| }
+c> static uint64_t twice(uint64_t x) {        // Start a persisted helper function.
+c|   return x * 2;                            // Return double the input.
+c| }                                          // Close and commit the function.
 definition block committed
-c> state->result = twice(21);
+c> state->result = twice(21);                 // Call the helper and publish 42.
 result 0x000000000000002a (42)
 ```
 
@@ -1044,15 +1040,15 @@ This computes:
 ```
 
 ```text
-c> static uint64_t calc_add(uint64_t a, uint64_t b) {
-c|   return a + b;
-c| }
+c> static uint64_t calc_add(uint64_t a, uint64_t b) {  // Start a reusable add helper.
+c|   return a + b;                                     // Return a + b.
+c| }                                                   // Close and commit calc_add.
 definition block committed
-c> static uint64_t calc_mul(uint64_t a, uint64_t b) {
-c|   return a * b;
-c| }
+c> static uint64_t calc_mul(uint64_t a, uint64_t b) {  // Start a reusable multiply helper.
+c|   return a * b;                                     // Return a * b.
+c| }                                                   // Close and commit calc_mul.
 definition block committed
-c> state->result = calc_mul(calc_add(7, 35), 2);
+c> state->result = calc_mul(calc_add(7, 35), 2);       // Compute (7 + 35) * 2.
 result 0x0000000000000054 (84)
 ```
 
@@ -1073,8 +1069,8 @@ state->out           /* 4096-byte output buffer used by print(...) */
 Convenience helpers:
 
 ```c
-U(n), F(n), SCRATCH(n)
-print("value=%llu\n", (unsigned long long)U(0))
+U(n), F(n), SCRATCH(n)                         /* Shorthand for persistent slots and scratch bytes. */
+print("value=%llu\n", (unsigned long long)U(0)) /* Append formatted text to state->out. */
 ```
 
 Commands:
@@ -1104,11 +1100,11 @@ lambdas, overloads, classes, and standard C++ experiments.
 ### `cpp-repl`: Quickstart
 
 ```bash
-npm i -g assembly-repl
-cpp-repl
+npm i -g assembly-repl  # Install the package globally.
+cpp-repl                # Start the C++ REPL.
 
-cpp> :help
-cpp> U(0) = 40 + 2; state->result = U(0);
+cpp> :help                                    // Show commands and C++ help topics.
+cpp> U(0) = 40 + 2; state->result = U(0);     // Compute 42 and store it as the printed result.
 result 0x000000000000002a (42)
 ```
 
@@ -1117,14 +1113,14 @@ result 0x000000000000002a (42)
 <details><summary><h4><code>cpp-repl</code>: Basics</h4></summary>
 
 ```text
-cpp> U(0) = 40 + 2; state->result = U(0);
+cpp> U(0) = 40 + 2; state->result = U(0);     // Compute 42 and publish it.
 result 0x000000000000002a (42)
 ```
 
 Local lambdas work too:
 
 ```text
-cpp> auto sq = [](uint64_t x) { return x * x; }; state->result = sq(12);
+cpp> auto sq = [](uint64_t x) { return x * x; }; state->result = sq(12);  // Define a local lambda and publish 12 squared.
 result 0x0000000000000090 (144)
 ```
 
@@ -1133,9 +1129,9 @@ result 0x0000000000000090 (144)
 <details><summary><h4><code>cpp-repl</code>: Making a System Call</h4></summary>
 
 ```text
-cpp> #include <unistd.h>
+cpp> #include <unistd.h>                      // Persist the getpid declaration.
 directive persisted
-cpp> state->result = static_cast<uint64_t>(::getpid());
+cpp> state->result = static_cast<uint64_t>(::getpid());  // Call getpid and publish the pid.
 result 0x0000000000001234 (4660)
 ```
 
@@ -1148,12 +1144,12 @@ The exact process id will be different on your machine.
 Top-level definitions work the same way:
 
 ```text
-cpp> template <typename T>
-cpp| T triple(T x) {
-cpp|   return x * 3;
-cpp| }
+cpp> template <typename T>                    // Start a reusable template definition.
+cpp| T triple(T x) {                          // Define triple(x).
+cpp|   return x * 3;                          // Return three times the input.
+cpp| }                                        // Close and commit the template.
 definition block committed
-cpp> state->result = triple<uint64_t>(14);
+cpp> state->result = triple<uint64_t>(14);    // Instantiate the template and publish 42.
 result 0x000000000000002a (42)
 ```
 
@@ -1168,15 +1164,15 @@ This computes:
 ```
 
 ```text
-cpp> static uint64_t calc_add(uint64_t a, uint64_t b) {
-cpp|   return a + b;
-cpp| }
+cpp> static uint64_t calc_add(uint64_t a, uint64_t b) {  // Start a reusable add helper.
+cpp|   return a + b;                                     // Return a + b.
+cpp| }                                                   // Close and commit calc_add.
 definition block committed
-cpp> static uint64_t calc_mul(uint64_t a, uint64_t b) {
-cpp|   return a * b;
-cpp| }
+cpp> static uint64_t calc_mul(uint64_t a, uint64_t b) {  // Start a reusable multiply helper.
+cpp|   return a * b;                                     // Return a * b.
+cpp| }                                                   // Close and commit calc_mul.
 definition block committed
-cpp> auto value = calc_mul(calc_add(7, 35), 2); state->result = value;
+cpp> auto value = calc_mul(calc_add(7, 35), 2); state->result = value;  // Compute (7 + 35) * 2 and publish it.
 result 0x0000000000000054 (84)
 ```
 
@@ -1197,8 +1193,8 @@ state->out           /* 4096-byte output buffer used by print(...) */
 Convenience helpers:
 
 ```c
-U(n), F(n), SCRATCH(n)
-print("value=%llu\n", (unsigned long long)U(0))
+U(n), F(n), SCRATCH(n)                         /* Shorthand for persistent slots and scratch bytes. */
+print("value=%llu\n", (unsigned long long)U(0)) /* Append formatted text to state->out. */
 ```
 
 Commands:
@@ -1229,11 +1225,11 @@ Foundation experiments. Foundation is imported by the generated wrapper.
 ### `objc-repl`: Quickstart
 
 ```bash
-npm i -g assembly-repl
-objc-repl
+npm i -g assembly-repl  # Install the package globally.
+objc-repl               # Start the Objective-C REPL.
 
-objc> :help
-objc> U(0) = 40 + 2; state->result = U(0);
+objc> :help                                   // Show commands and Objective-C help topics.
+objc> U(0) = 40 + 2; state->result = U(0);    // Compute 42 and store it as the printed result.
 result 0x000000000000002a (42)
 ```
 
@@ -1242,14 +1238,14 @@ result 0x000000000000002a (42)
 <details><summary><h4><code>objc-repl</code>: Basics</h4></summary>
 
 ```text
-objc> U(0) = 40 + 2; state->result = U(0);
+objc> U(0) = 40 + 2; state->result = U(0);    // Compute 42 and publish it.
 result 0x000000000000002a (42)
 ```
 
 Foundation values work too:
 
 ```text
-objc> NSString *s = @"hello"; state->result = [s length];
+objc> NSString *s = @"hello"; state->result = [s length];  // Create a string and publish its length.
 result 0x0000000000000005 (5)
 ```
 
@@ -1258,9 +1254,9 @@ result 0x0000000000000005 (5)
 <details><summary><h4><code>objc-repl</code>: Making a System Call</h4></summary>
 
 ```text
-objc> #include <unistd.h>
+objc> #include <unistd.h>                     // Persist the getpid declaration.
 directive persisted
-objc> state->result = (uint64_t)getpid();
+objc> state->result = (uint64_t)getpid();     // Call getpid and publish the pid.
 result 0x0000000000001234 (4660)
 ```
 
@@ -1274,15 +1270,15 @@ You can persist Objective-C classes by entering interface and implementation
 blocks:
 
 ```text
-objc> @interface Counter : NSObject
-objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b;
-objc| @end
+objc> @interface Counter : NSObject           // Start the Counter class interface.
+objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b;  // Declare an add method.
+objc| @end                                    // Close and commit the interface.
 definition block committed
-objc> @implementation Counter
-objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b { return a + b; }
-objc| @end
+objc> @implementation Counter                 // Start the Counter implementation.
+objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b { return a + b; }  // Implement add.
+objc| @end                                    // Close and commit the implementation.
 definition block committed
-objc> Counter *c = [Counter new]; state->result = [c add:40 to:2];
+objc> Counter *c = [Counter new]; state->result = [c add:40 to:2];  // Create a Counter and publish 42.
 result 0x000000000000002a (42)
 ```
 
@@ -1297,17 +1293,17 @@ This computes:
 ```
 
 ```text
-objc> @interface Calculator : NSObject
-objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b;
-objc| - (uint64_t)multiply:(uint64_t)a by:(uint64_t)b;
-objc| @end
+objc> @interface Calculator : NSObject        // Start the Calculator interface.
+objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b;       // Declare add.
+objc| - (uint64_t)multiply:(uint64_t)a by:(uint64_t)b;  // Declare multiply.
+objc| @end                                    // Close and commit the interface.
 definition block committed
-objc> @implementation Calculator
-objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b { return a + b; }
-objc| - (uint64_t)multiply:(uint64_t)a by:(uint64_t)b { return a * b; }
-objc| @end
+objc> @implementation Calculator              // Start the Calculator implementation.
+objc| - (uint64_t)add:(uint64_t)a to:(uint64_t)b { return a + b; }       // Implement add.
+objc| - (uint64_t)multiply:(uint64_t)a by:(uint64_t)b { return a * b; }  // Implement multiply.
+objc| @end                                    // Close and commit the implementation.
 definition block committed
-objc> Calculator *calc = [Calculator new]; state->result = [calc multiply:[calc add:7 to:35] by:2];
+objc> Calculator *calc = [Calculator new]; state->result = [calc multiply:[calc add:7 to:35] by:2];  // Compute (7 + 35) * 2.
 result 0x0000000000000054 (84)
 ```
 
@@ -1328,8 +1324,8 @@ state->out           /* 4096-byte output buffer used by print(...) */
 Convenience helpers:
 
 ```c
-U(n), F(n), SCRATCH(n)
-print("value=%llu\n", (unsigned long long)U(0))
+U(n), F(n), SCRATCH(n)                         /* Shorthand for persistent slots and scratch bytes. */
+print("value=%llu\n", (unsigned long long)U(0)) /* Append formatted text to state->out. */
 ```
 
 Commands:
@@ -1359,25 +1355,25 @@ For each executable input, the REPL writes a tiny wrapper assembly file into
 `.repl-build/`, like this conceptually:
 
 ```asm
-_asmrepl_entry:
-  ; save host registers the C ABI cares about
-  ; load persisted user registers from reg_context_t
+_asmrepl_entry:                                   // Generated wrapper entry point.
+  ; save host registers the C ABI cares about     // Preserve the host process state.
+  ; load persisted user registers from reg_context_t // Restore the REPL register state.
 
-  <your instruction here>
+  <your instruction here>                         // The instruction or branch you typed.
 
-  ; store user registers and NZCV flags back into reg_context_t
-  ; restore host registers
-  ret
+  ; store user registers and NZCV flags back into reg_context_t // Persist the result.
+  ; restore host registers                         // Put the host ABI state back.
+  ret                                             // Return to the C runner.
 
-  ; persisted labels/directives/routines live down here
-  _some_routine:
-    ret
+  ; persisted labels/directives/routines live down here // User definitions are appended.
+  _some_routine:                                  // Example persisted routine.
+    ret                                          // Return to its caller.
 ```
 
 Then it runs:
 
 ```sh
-clang -c -arch arm64 .repl-build/line-N.s -o .repl-build/line-N.o
+clang -c -arch arm64 .repl-build/line-N.s -o .repl-build/line-N.o  # Assemble one generated snippet.
 ```
 
 The C code extracts the `__TEXT,__text` bytes from that object file, maps them
@@ -1405,11 +1401,11 @@ The npm entrypoints are Node wrapper scripts. For native debugging, point LLDB a
 the native runner directly. From a source checkout after `make` or `pnpm build`:
 
 ```sh
-lldb -- ./asmrepl
-lldb -- ./language-repl --mode c
-lldb -- ./language-repl --mode cpp
-lldb -- ./language-repl --mode objc
-lldb -- ./language-repl --mode llvmir
+lldb -- ./asmrepl                       # Debug the native assembly runner.
+lldb -- ./language-repl --mode c        # Debug the C mode of language-repl.
+lldb -- ./language-repl --mode cpp      # Debug the C++ mode of language-repl.
+lldb -- ./language-repl --mode objc     # Debug the Objective-C mode of language-repl.
+lldb -- ./language-repl --mode llvmir   # Debug the LLVM IR mode of language-repl.
 ```
 
 These correspond to:
@@ -1425,24 +1421,24 @@ These correspond to:
 Inside LLDB:
 
 ```text
-(lldb) run
-(lldb) register read
-(lldb) bt
-(lldb) disassemble --pc
+(lldb) run              // Start the target under LLDB.
+(lldb) register read    // Show CPU registers.
+(lldb) bt               // Print a backtrace.
+(lldb) disassemble --pc // Disassemble around the current program counter.
 ```
 
 To debug an installed npm package, point LLDB at the selected prebuilt native
 runner:
 
 ```sh
-pkg="$(npm root -g)/assembly-repl"
-target="$(node -p '`${process.platform}-${process.arch}`')"
+pkg="$(npm root -g)/assembly-repl"                         # Locate the global package.
+target="$(node -p '`${process.platform}-${process.arch}`')" # Match the selected prebuild directory.
 
-lldb -- "$pkg/prebuilds/$target/assembly-repl"
-lldb -- "$pkg/prebuilds/$target/language-repl" --mode c
-lldb -- "$pkg/prebuilds/$target/language-repl" --mode cpp
-lldb -- "$pkg/prebuilds/$target/language-repl" --mode objc
-lldb -- "$pkg/prebuilds/$target/language-repl" --mode llvmir
+lldb -- "$pkg/prebuilds/$target/assembly-repl"                 # Debug installed assembly-repl.
+lldb -- "$pkg/prebuilds/$target/language-repl" --mode c        # Debug installed c-repl.
+lldb -- "$pkg/prebuilds/$target/language-repl" --mode cpp      # Debug installed cpp-repl.
+lldb -- "$pkg/prebuilds/$target/language-repl" --mode objc     # Debug installed objc-repl.
+lldb -- "$pkg/prebuilds/$target/language-repl" --mode llvmir   # Debug installed llvmir-repl.
 ```
 
 On Linux, use `gdb` or `lldb` if installed; the native runner arguments are the
@@ -1462,7 +1458,7 @@ and debugging notes above.
 ### Refresh Packaged Prebuilds
 
 ```sh
-pnpm build
+pnpm build  # Rebuild and vendor packaged native prebuilds.
 ```
 
 This rebuilds the macOS arm64 native runners locally, rebuilds the Linux x64 and
@@ -1474,18 +1470,18 @@ Linux arm64 native runners with Docker buildx, and vendors all of them into
 For a local-only native build:
 
 ```sh
-make
-./asmrepl
+make       # Build local native runners.
+./asmrepl  # Run the local assembly runner directly.
 ```
 
 Or:
 
 ```sh
-make run
+make run   # Build and run the local assembly runner.
 ```
 
 Clean generated files:
 
 ```sh
-make clean
+make clean # Remove generated native build outputs.
 ```
