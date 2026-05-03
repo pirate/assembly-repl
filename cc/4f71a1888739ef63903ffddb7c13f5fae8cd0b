@@ -1,0 +1,42 @@
+package.json
+  b81e752cea5e095d 26,31-32
+README.md
+  b81e752cea5e095d 134,155,184,207,249,283,285,297-299,319-321,340-342,358-360,378-380,396-398,450-452,481-483,502-504,532-534,553-555,569,592,619,643,660,705-707,726,779-781,801-850,872,886,907,926,957-983,1010,1020,1033,1048,1071,1109-1124,1127,1143,1156,1172,1195,1233-1249,1252,1268,1281,1301,1326-1467,1472-1473,1482
+Dockerfile
+  b81e752cea5e095d 1-20
+bin/build.js
+  b81e752cea5e095d 19-30,93,102-165,172-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "cc4f71a1888739ef63903ffddb7c13f5fae8cd0b",
+  "prompts": {
+    "1a8adb82a1d1f34e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019def8c-c9b2-7f61-9920-fa417449bf11",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 550,
+      "total_deletions": 528,
+      "accepted_lines": 726,
+      "overriden_lines": 0
+    },
+    "b81e752cea5e095d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019def8f-3be8-7b21-a174-df3455731106",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 800,
+      "total_deletions": 520,
+      "accepted_lines": 1771,
+      "overriden_lines": 0
+    }
+  }
+}
