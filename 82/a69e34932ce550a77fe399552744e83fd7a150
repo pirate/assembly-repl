@@ -1,0 +1,25 @@
+src/asmrepl.c
+  cca77dd82724de47 36-41,57-103,121-147,187,194-195,198-203,265,298-305,433,436-437,439,499,501,510-525,542-547,556,564-570,573-575,579-583,611-649,654-659
+README.md
+  cca77dd82724de47 5-7,15,20,106-107,116-136,139,152-155,207-208,220-221,237,239-244,247,250-251,254,259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "82a69e34932ce550a77fe399552744e83fd7a150",
+  "prompts": {
+    "cca77dd82724de47": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019de76f-9b9b-7e30-87bb-c90e942465a4",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 238,
+      "total_deletions": 68,
+      "accepted_lines": 236,
+      "overriden_lines": 0
+    }
+  }
+}
