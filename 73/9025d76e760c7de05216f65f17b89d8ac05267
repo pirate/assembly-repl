@@ -1,0 +1,25 @@
+src/asmrepl.c
+  1a8adb82a1d1f34e 185-225,1226-1230,1238,1316,1320-1321,1326-1327
+src/language-repl.c
+  1a8adb82a1d1f34e 161-210,1622-1626,1630-1631,1762,1766,1768,1774,1778,1783-1785
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "739025d76e760c7de05216f65f17b89d8ac05267",
+  "prompts": {
+    "1a8adb82a1d1f34e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019def8c-c9b2-7f61-9920-fa417449bf11",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 117,
+      "total_deletions": 16,
+      "accepted_lines": 393,
+      "overriden_lines": 0
+    }
+  }
+}
