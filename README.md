@@ -474,6 +474,111 @@ adds x0, x0, #1
 
 Both versions leave `x0` as `42`, but only `adds` updates `NZCV`.
 
+## Demo: Direct Syscalls 🧬
+
+On macOS ARM64, a Unix syscall uses this basic convention:
+
+- `x0`, `x1`, `x2`, ... hold arguments
+- `x16` holds the syscall number
+- Unix syscall numbers are encoded as `0x2000000 | SYS_number`
+- `svc #0x80` enters the kernel
+- `x0` receives the return value
+- on error, carry is set and `x0` contains `errno`
+
+The examples below use `movz` + `movk` to build syscall numbers like
+`0x2000005`, because those constants are too large for a single `mov` immediate.
+
+### open
+
+This calls `open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644)`. The returned file
+descriptor is left in `x0`.
+
+```asm
+open_demo:
+  adr x0, open_path
+  mov x1, #0x601
+  mov x2, #420
+  movz x16, #5
+  movk x16, #0x200, lsl #16
+  svc #0x80
+  ret
+
+open_path:
+  .asciz ".asmrepl-open-demo.txt"
+
+bl open_demo
+```
+
+The flags are `O_WRONLY` (`0x1`), `O_CREAT` (`0x200`), and `O_TRUNC` (`0x400`).
+
+### mmap
+
+This calls `mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON,
+-1, 0)`, writes `42` into the returned mapping, and loads it back into `x2`.
+
+```asm
+mmap_demo:
+  mov x0, #0
+  mov x1, #4096
+  mov x2, #3
+  mov x3, #0x1002
+  mov x4, #-1
+  mov x5, #0
+  movz x16, #197
+  movk x16, #0x200, lsl #16
+  svc #0x80
+  mov x21, x0
+  mov x1, #42
+  str x1, [x21]
+  ldr x2, [x21]
+  ret
+
+bl mmap_demo
+```
+
+After the call, `x21` contains the mapped address and `x2` contains `42`.
+
+### fork
+
+This calls `fork()`. On Darwin, the parent returns with the child pid in `x0`
+and `x1 = 0`; the child returns with `x1 = 1`. The child immediately calls
+`exit(0)` so it does not become a second REPL reading from the same terminal.
+
+```asm
+fork_demo:
+  movz x16, #2
+  movk x16, #0x200, lsl #16
+  svc #0x80
+  cbnz x1, fork_child
+  ret
+
+fork_child:
+  mov x0, #0
+  movz x16, #1
+  movk x16, #0x200, lsl #16
+  svc #0x80
+  ret
+
+bl fork_demo
+```
+
+### exit
+
+This terminates the REPL process with exit status `42`.
+
+```asm
+exit_demo:
+  mov x0, #42
+  movz x16, #1
+  movk x16, #0x200, lsl #16
+  svc #0x80
+  ret
+
+bl exit_demo
+```
+
+Run this one last. It does exactly what it says.
+
 ## Demo: Crash-As-A-Lesson Mode 💥
 
 This REPL is intentionally unsafe. You can use that to learn why valid memory,
