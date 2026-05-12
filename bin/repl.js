@@ -31,11 +31,11 @@ const localBinary = path.join(root, mode === 'asm' ? 'asmrepl' : 'language-repl'
 const prebuiltBinary = path.join(root, 'prebuilds', dir, binaryBase);
 const binary = mode === 'wasm' ? process.execPath : (fileExists(localBinary) ? localBinary : prebuiltBinary);
 const runtimeDependencies = runtimeDependenciesForMode(mode);
-const args = process.argv.slice(2);
-const noHighlight = args.includes('--no-highlight') ||
+const options = parseWrapperArgs(process.argv.slice(2));
+const noHighlight = options.noHighlight ||
     process.env.REPL_NO_HIGHLIGHT === '1' ||
     process.env.ASMREPL_NO_HIGHLIGHT === '1';
-const childArgs = args.filter((arg) => arg !== '--no-highlight');
+const childArgs = options.childArgs;
 const effectiveChildArgs = mode === 'wasm'
     ? [path.join(root, 'bin', 'wasm-runner.js'), ...childArgs]
     : (mode === 'asm' ? childArgs : ['--mode', mode, ...childArgs]);
@@ -62,7 +62,9 @@ if (missingDependencies.length > 0) {
     process.exit(1);
 }
 
-if (noHighlight || !process.stdin.isTTY || !process.stdout.isTTY) {
+if (options.debuggerRequested) {
+    launchDebugger(commandName, options.debuggerCommand, binary, effectiveChildArgs);
+} else if (noHighlight || !process.stdin.isTTY || !process.stdout.isTTY) {
     const child = spawn(binary, effectiveChildArgs, { stdio: 'inherit' });
     child.on('exit', (code, signal) => {
         if (signal) process.kill(process.pid, signal);
@@ -70,6 +72,317 @@ if (noHighlight || !process.stdin.isTTY || !process.stdout.isTTY) {
     });
 } else {
     runHighlighted(binary, effectiveChildArgs, mode, promptBaseByMode[mode]);
+}
+
+function parseWrapperArgs(args) {
+    const childArgs = [];
+    let noHighlight = false;
+    let debuggerRequested = false;
+    let debuggerCommand = '';
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+
+        if (arg === '--no-highlight') {
+            noHighlight = true;
+            continue;
+        }
+
+        if (arg === '--debugger' || arg === '--debug') {
+            debuggerRequested = true;
+            const next = args[i + 1];
+            if (next && !next.startsWith('-')) {
+                debuggerCommand = next;
+                i++;
+            }
+            continue;
+        }
+
+        if (arg.startsWith('--debugger=')) {
+            debuggerRequested = true;
+            debuggerCommand = arg.slice('--debugger='.length);
+            continue;
+        }
+
+        if (arg === '--lldb') {
+            debuggerRequested = true;
+            debuggerCommand = 'lldb';
+            continue;
+        }
+
+        if (arg === '--gdb') {
+            debuggerRequested = true;
+            debuggerCommand = 'gdb';
+            continue;
+        }
+
+        childArgs.push(arg);
+    }
+
+    return { childArgs, noHighlight, debuggerRequested, debuggerCommand };
+}
+
+function launchDebugger(displayCommand, requestedDebugger, target, targetArgs) {
+    const debuggerConfig = resolveDebugger(requestedDebugger, target, targetArgs);
+    if (!debuggerConfig) {
+        printDebuggerInstallHelp(displayCommand, requestedDebugger);
+        process.exit(1);
+    }
+
+    let attachedTarget = null;
+    let attachedTargetExited = false;
+    const cleanupAttachedTarget = () => {
+        if (attachedTarget && !attachedTargetExited) {
+            try {
+                attachedTarget.kill('SIGKILL');
+            } catch {
+                // The attached process may already be gone by the time the debugger exits.
+            }
+        }
+    };
+
+    if (debuggerConfig.attachTarget) {
+        attachedTarget = spawn(debuggerConfig.attachTarget.command, debuggerConfig.attachTarget.args, { stdio: 'inherit' });
+        attachedTarget.on('exit', () => {
+            attachedTargetExited = true;
+        });
+        attachedTarget.on('error', (error) => {
+            console.error(`${displayCommand}: failed to launch target for debugger attach: ${error.message}`);
+            process.exit(1);
+        });
+        if (!attachedTarget.pid) {
+            console.error(`${displayCommand}: failed to launch target for debugger attach.`);
+            process.exit(1);
+        }
+        try {
+            if (!attachedTarget.kill('SIGSTOP')) {
+                throw new Error('process did not accept SIGSTOP');
+            }
+        } catch (error) {
+            console.error(`${displayCommand}: failed to stop target before debugger attach: ${error.message}`);
+            process.exit(1);
+        }
+        debuggerConfig.args = debuggerConfig.args(attachedTarget.pid);
+    }
+
+    if (debuggerConfig.note) {
+        console.error(`${displayCommand}: ${debuggerConfig.note}`);
+    }
+    console.error(`${displayCommand}: launching ${debuggerConfig.label} for ${targetLabel(target, targetArgs)}`);
+    const child = spawn(debuggerConfig.command, debuggerConfig.args, { stdio: 'inherit' });
+    child.on('exit', (code, signal) => {
+        cleanupAttachedTarget();
+        if (signal) process.kill(process.pid, signal);
+        else process.exit(code ?? 0);
+    });
+    child.on('error', (error) => {
+        cleanupAttachedTarget();
+        console.error(`${displayCommand}: failed to launch ${debuggerConfig.command}: ${error.message}`);
+        process.exit(1);
+    });
+}
+
+function resolveDebugger(requestedDebugger, target, targetArgs) {
+    const requested = normalizeDebuggerName(requestedDebugger);
+    if (!requested) {
+        for (const candidate of ['lldb', 'gdb']) {
+            const config = resolveDebugger(candidate, target, targetArgs);
+            if (config) return config;
+        }
+        return null;
+    }
+
+    const preset = debuggerPreset(requested);
+    if (preset) {
+        return commandExists(preset.command) ? preset.config(target, targetArgs) : null;
+    }
+
+    return commandExists(requested)
+        ? {
+            command: requested,
+            args: debuggerArgs(requested, target, targetArgs),
+            label: path.basename(requested),
+        }
+        : null;
+}
+
+function normalizeDebuggerName(value) {
+    return (value || '').trim().toLowerCase();
+}
+
+function debuggerPreset(name) {
+    const presets = {
+        lldb: {
+            command: 'lldb',
+            config: (target, targetArgs) => ({
+                command: 'lldb',
+                args: ['--', target, ...targetArgs],
+                label: 'lldb',
+                note: "target is loaded but not started; type 'run' in LLDB to start it",
+            }),
+        },
+        'lldb-gui': {
+            command: 'lldb',
+            config: (target, targetArgs) => ({
+                command: 'lldb',
+                args: ['-o', 'process launch --stop-at-entry', '--', target, ...targetArgs],
+                label: 'lldb-gui',
+                note: "target will stop at entry; type 'gui' at the (lldb) prompt to enter LLDB's curses UI",
+            }),
+        },
+        gdb: {
+            command: 'gdb',
+            config: (target, targetArgs) => ({
+                command: 'gdb',
+                args: ['-q', '-ex', 'set pagination off', '--args', target, ...targetArgs],
+                label: 'gdb',
+                note: compactNotes(["target is loaded but not started; type 'run' in GDB to start it", gdbMacNote()]),
+            }),
+        },
+        'gdb-tui': {
+            command: 'gdb',
+            config: (target, targetArgs) => ({
+                command: 'gdb',
+                args: ['-q', '-tui', '-ex', 'set pagination off', '--args', target, ...targetArgs],
+                label: 'gdb-tui',
+                note: compactNotes(["target is loaded but not started; type 'run' in GDB to start it", gdbMacNote()]),
+            }),
+        },
+        cgdb: {
+            command: 'cgdb',
+            config: (target, targetArgs) => ({
+                command: 'cgdb',
+                args: ['--args', target, ...targetArgs],
+                label: 'cgdb',
+                note: "target is loaded but not started; type 'run' in the GDB command window to start it",
+            }),
+        },
+        pwnbg: {
+            command: process.platform === 'darwin' ? 'pwndbg-lldb' : 'pwndbg',
+            config: pwndbgConfig,
+        },
+        pwndbg: {
+            command: process.platform === 'darwin' ? 'pwndbg-lldb' : 'pwndbg',
+            config: pwndbgConfig,
+        },
+    };
+    return presets[name] || null;
+}
+
+function pwndbgConfig(target, targetArgs) {
+    if (process.platform === 'darwin') {
+        return {
+            command: 'pwndbg-lldb',
+            args: (pid) => ['-p', String(pid)],
+            label: 'pwndbg-lldb',
+            note: 'starting the target paused and attaching with pwndbg-lldb',
+            attachTarget: {
+                command: target,
+                args: targetArgs,
+            },
+        };
+    }
+
+    return {
+        command: 'pwndbg',
+        args: ['-q', '--args', target, ...targetArgs],
+        label: 'pwndbg',
+        note: "target is loaded but not started; type 'run' in Pwndbg to start it",
+    };
+}
+
+function compactNotes(notes) {
+    return notes.filter(Boolean).join('; ');
+}
+
+function gdbMacNote() {
+    return process.platform === 'darwin'
+        ? 'GDB on macOS may need codesigning before it can run or attach to processes'
+        : '';
+}
+
+function printDebuggerInstallHelp(displayCommand, requestedDebugger) {
+    const requested = normalizeDebuggerName(requestedDebugger);
+    const label = requested || 'lldb or gdb';
+    console.error(`${displayCommand}: could not find debugger '${label}'.`);
+    console.error('');
+
+    if (!requested) {
+        console.error('Install LLDB or GDB, then run this command again.');
+        console.error('macOS:         xcode-select --install');
+        console.error('Debian/Ubuntu: sudo apt install lldb gdb');
+        console.error('Fedora:        sudo dnf install lldb gdb');
+        console.error('Arch:          sudo pacman -S lldb gdb');
+        return;
+    }
+
+    if (requested === 'lldb' || requested === 'lldb-gui') {
+        console.error(`${requested} needs the 'lldb' command on PATH.`);
+        console.error('macOS:         xcode-select --install');
+        console.error('Homebrew:      brew install llvm');
+        console.error('Debian/Ubuntu: sudo apt install lldb');
+        console.error('Fedora:        sudo dnf install lldb');
+        console.error('Arch:          sudo pacman -S lldb');
+        if (requested === 'lldb-gui') {
+            console.error('');
+            console.error("If 'lldb' exists but 'gui' fails, install an LLDB build with curses GUI support.");
+        }
+        return;
+    }
+
+    if (requested === 'gdb' || requested === 'gdb-tui') {
+        console.error(`${requested} needs the 'gdb' command on PATH.`);
+        console.error('Homebrew:      brew install gdb');
+        console.error('Debian/Ubuntu: sudo apt install gdb');
+        console.error('Fedora:        sudo dnf install gdb');
+        console.error('Arch:          sudo pacman -S gdb');
+        return;
+    }
+
+    if (requested === 'cgdb') {
+        console.error("cgdb needs the 'cgdb' command on PATH.");
+        console.error('Homebrew:      brew install cgdb');
+        console.error('Debian/Ubuntu: sudo apt install cgdb');
+        console.error('Fedora:        sudo dnf install cgdb');
+        console.error('Arch:          sudo pacman -S cgdb');
+        return;
+    }
+
+    if (requested === 'pwnbg' || requested === 'pwndbg') {
+        const command = process.platform === 'darwin' ? 'pwndbg-lldb' : 'pwndbg';
+        console.error(`pwnbg needs the '${command}' command on PATH.`);
+        if (process.platform === 'darwin') {
+            console.error('Homebrew:      brew install --cask pwndbg-lldb');
+        } else {
+            console.error('Install Pwndbg, then make sure its launcher is on PATH.');
+        }
+        console.error('Docs:          https://github.com/pwndbg/pwndbg');
+        return;
+    }
+
+    console.error(`Install '${requested}' or pass one of: lldb, lldb-gui, gdb, gdb-tui, cgdb, pwnbg.`);
+}
+
+function debuggerArgs(debuggerCommand, target, targetArgs) {
+    if (isGdb(debuggerCommand)) {
+        return ['-q', '-ex', 'set pagination off', '--args', target, ...targetArgs];
+    }
+    return ['--', target, ...targetArgs];
+}
+
+function isGdb(debuggerCommand) {
+    return path.basename(debuggerCommand).toLowerCase().includes('gdb');
+}
+
+function targetLabel(target, targetArgs) {
+    return [target, ...targetArgs].map(shellQuote).join(' ');
+}
+
+function shellQuote(value) {
+    if (/^[A-Za-z0-9_./:=+-]+$/.test(value)) {
+        return value;
+    }
+    return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function runHighlighted(command, commandArgs, modeName, promptBase) {
@@ -302,8 +615,10 @@ function highlightOutputLine(line, state, modeName = 'asm') {
             .replace(/(\/[^\s]+)/, (compilerPath) => colors.cyan(compilerPath));
     }
 
-    if (/^(Commands|Instruction help|Block mode|Notes|Help topics|Execution model|Safety):$/.test(line)) {
-        state.mode = line.slice(0, -1).toLowerCase().replace(/\s+/g, '-');
+    if (/^(Commands|Instruction help|Block mode|Notes|Help topics|Startup flags(?: for the public command)?|Execution model|Safety):$/.test(line)) {
+        state.mode = /^Startup flags/.test(line)
+            ? 'startup-flags'
+            : line.slice(0, -1).toLowerCase().replace(/\s+/g, '-');
         return colors.bold.underline(line);
     }
 
@@ -345,7 +660,7 @@ function highlightOutputLine(line, state, modeName = 'asm') {
     }
 
     if (state.mode === 'block-mode' || state.mode === 'notes' || state.mode === 'help-topics' ||
-        state.mode === 'execution-model' || state.mode === 'safety') {
+        state.mode === 'startup-flags' || state.mode === 'execution-model' || state.mode === 'safety') {
         return colorOutputTokens(line, { commands: true });
     }
 
@@ -667,6 +982,21 @@ function ensureExecutable(file) {
 function commandAvailable(command) {
     const result = spawnSync(command, ['--version'], { stdio: 'ignore' });
     return !result.error && result.status === 0;
+}
+
+function commandExists(command) {
+    if (command.includes(path.sep)) {
+        return executable(command);
+    }
+
+    const pathEnv = process.env.PATH || '';
+    for (const dir of pathEnv.split(path.delimiter)) {
+        if (!dir) continue;
+        if (executable(path.join(dir, command))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function runtimeDependenciesForMode(modeName) {

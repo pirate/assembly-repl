@@ -421,6 +421,11 @@ function printHelp() {
     console.log('Help topics:');
     console.log('  Add ? after a topic or instruction, for example stack? or i64.add?.');
     console.log('');
+    console.log('Startup flags for the public command:');
+    console.log('  --debugger         launch this REPL under LLDB, or GDB if LLDB is unavailable');
+    console.log('  --debugger=<name>  use lldb, lldb-gui, gdb, gdb-tui, cgdb, or pwnbg');
+    console.log('  --lldb / --gdb     launch under LLDB or GDB explicitly');
+    console.log('');
     console.log('Execution model:');
     console.log('  Each accepted line is appended to one generated WebAssembly function body.');
     console.log('  The whole body is compiled and executed after each accepted line.');

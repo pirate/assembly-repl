@@ -1566,61 +1566,29 @@ and called through a common `repl_entry` function. State lives in a persistent
 WebAssembly binaries directly, instantiates them with Node's `WebAssembly` API,
 and writes the generated `.wat` and `.wasm` artifacts into `.repl-build/`.
 
-## Debugging With LLDB 🔎
+## Debugger Flag 🔎
 
-The built-in register and state dumps are usually enough for simple learning,
-but LLDB is useful when you intentionally try dangerous code or want to inspect
-the native runner process.
-
-The npm entrypoints are Node wrapper scripts. For native debugging, point LLDB at
-the native runner directly. From a source checkout after `make` or `pnpm build`:
+Pass `--debugger` to any REPL command to open a debugger with the right target
+selected. With no value, the wrapper tries LLDB first, then GDB. You can also
+use `--lldb`, `--gdb`, or choose an explicit debugger:
 
 ```sh
-lldb -- ./asmrepl                       # Debug the native assembly runner.
-lldb -- ./language-repl --mode c        # Debug the C mode of language-repl.
-lldb -- ./language-repl --mode cpp      # Debug the C++ mode of language-repl.
-lldb -- ./language-repl --mode objc     # Debug the Objective-C mode of language-repl.
-lldb -- ./language-repl --mode llvmir   # Debug the LLVM IR mode of language-repl.
-# wasm-repl is a Node WebAssembly runner, so it does not use language-repl.
+assembly-repl --debugger
+wasm-repl --debugger=lldb-gui
 ```
 
-These correspond to:
+Allowed debugger names:
 
-| public command  | native LLDB target                  |
-|-----------------|-------------------------------------|
-| `assembly-repl` | `./asmrepl`                         |
-| `c-repl`        | `./language-repl --mode c`          |
-| `cpp-repl`      | `./language-repl --mode cpp`        |
-| `objc-repl`     | `./language-repl --mode objc`       |
-| `llvmir-repl`   | `./language-repl --mode llvmir`     |
+- `lldb`
+- `lldb-gui` 🌈
+- `gdb`
+- `gdb-tui` 🌈
+- `cgdb` 🌈
+- `pwnbg` 🌈
+- `pwndbg` 🌈
 
-`wasm-repl` is implemented in Node and does not have a native LLDB target.
-
-Inside LLDB:
-
-```text
-(lldb) run              // Start the target under LLDB.
-(lldb) register read    // Show CPU registers.
-(lldb) bt               // Print a backtrace.
-(lldb) disassemble --pc // Disassemble around the current program counter.
-```
-
-To debug an installed npm package, point LLDB at the selected prebuilt native
-runner:
-
-```sh
-pkg="$(npm root -g)/assembly-repl"                         # Locate the global package.
-target="$(node -p '`${process.platform}-${process.arch}`')" # Match the selected prebuild directory.
-
-lldb -- "$pkg/prebuilds/$target/assembly-repl"                 # Debug installed assembly-repl.
-lldb -- "$pkg/prebuilds/$target/language-repl" --mode c        # Debug installed c-repl.
-lldb -- "$pkg/prebuilds/$target/language-repl" --mode cpp      # Debug installed cpp-repl.
-lldb -- "$pkg/prebuilds/$target/language-repl" --mode objc     # Debug installed objc-repl.
-lldb -- "$pkg/prebuilds/$target/language-repl" --mode llvmir   # Debug installed llvmir-repl.
-```
-
-On Linux, use `gdb` or `lldb` if installed; the native runner arguments are the
-same.
+If the selected debugger is missing, the wrapper prints install hints for that
+dependency. On macOS, `pwnbg`/`pwndbg` uses `pwndbg-lldb` attach mode.
 
 ## Development 🛠️
 

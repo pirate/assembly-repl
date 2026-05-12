@@ -1136,6 +1136,11 @@ static void print_help(repl_mode_t mode) {
     puts("Help topics:");
     puts("  Add ? after a topic, for example state? or store?.");
     puts("");
+    puts("Startup flags for the public command:");
+    puts("  --debugger         launch this REPL under LLDB, or GDB if LLDB is unavailable");
+    puts("  --debugger=<name>  use lldb, lldb-gui, gdb, gdb-tui, cgdb, or pwnbg");
+    puts("  --lldb / --gdb     launch under LLDB or GDB explicitly");
+    puts("");
     if (mode_is_statement_repl(mode)) {
         puts("Execution model:");
         puts("  Normal input is compiled inside void repl_entry(repl_state_t *state).");

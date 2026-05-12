@@ -631,6 +631,11 @@ static void print_help(void) {
     printf("  Add ? after an instruction mnemonic, for example %s.\n", instruction_help_examples());
     printf("  A full line ending in ? also works, for example %s.\n", instruction_help_full_line_example());
     puts("");
+    puts("Startup flags for the public command:");
+    puts("  --debugger         launch this REPL under LLDB, or GDB if LLDB is unavailable");
+    puts("  --debugger=<name>  use lldb, lldb-gui, gdb, gdb-tui, cgdb, or pwnbg");
+    puts("  --lldb / --gdb     launch under LLDB or GDB explicitly");
+    puts("");
     puts("Block mode:");
     puts("  A directive at column 0 is persisted immediately.");
     puts("  A label at column 0 starts a persistent definition block.");
