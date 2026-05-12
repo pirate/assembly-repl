@@ -1,7 +1,7 @@
 {
   "name": "assembly-repl",
   "version": "0.1.1",
-  "description": "Native raw assembly, LLVM IR, C, C++, and Objective C REPLs for macOS and Linux",
+  "description": "Native raw assembly, WebAssembly, LLVM IR, C, C++, and Objective C REPLs for macOS and Linux",
   "license": "MIT",
   "homepage": "https://github.com/pirate/assembly-repl#readme",
   "repository": {
@@ -16,7 +16,8 @@
     "c-repl": "./bin/c-repl.js",
     "cpp-repl": "./bin/cpp-repl.js",
     "objc-repl": "./bin/objc-repl.js",
-    "llvmir-repl": "./bin/llvmir-repl.js"
+    "llvmir-repl": "./bin/llvmir-repl.js",
+    "wasm-repl": "./bin/wasm-repl.js"
   },
   "files": [
     "bin/",
@@ -40,6 +41,8 @@
     "c",
     "cpp",
     "objective-c",
+    "wasm",
+    "webassembly",
     "llvm",
     "llvm-ir",
     "linux",

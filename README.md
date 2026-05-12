@@ -1,15 +1,16 @@
-# 🧪 `assembly-repl`, <br/>`llvmir-repl`, `cpp-repl`, `c-repl`, `objc-repl`
+# 🧪 `assembly-repl`, <br/>`llvmir-repl`, `cpp-repl`, `c-repl`, `objc-repl`, `wasm-repl`
 
-A small family of low-level REPLs for learning assembly and LLVM IR.
+A small family of low-level REPLs for learning assembly, WebAssembly, and LLVM IR.
 
 Type assembly, run it directly on the CPU, and immediately see the register
 state that came back. You can enter single instructions or define normal
 assembly routines with labels and indentation, then call them later with `bl`
 (arm64) or `call` (x86_64).
 
-This is an educational toy for learning assembly and LLVM IR. It is not a sandbox, emulator,
-or production debugger. If you ask it to crash, loop forever, corrupt memory, or
-jump into nonsense, it will probably do exactly that. 🔥
+This is an educational toy for learning assembly, WebAssembly, and LLVM IR. It is
+not a sandbox, emulator, or production debugger. If you ask it to crash, loop
+forever, corrupt memory, or jump into nonsense, it will probably do exactly
+that. 🔥
 
 ## Included REPLs ⚙️
 
@@ -18,11 +19,15 @@ jump into nonsense, it will probably do exactly that. 🔥
 - `cpp-repl`: C++20 snippet REPL
 - `objc-repl`: Objective-C snippet REPL on macOS
 - `llvmir-repl`: LLVM IR snippet REPL
+- `wasm-repl`: WebAssembly instruction REPL
 
 ## Requirements
 
-- `clang` at runtime (the REPL shells out to it for each line)
+- `clang` at runtime for `assembly-repl`, `c-repl`, `objc-repl`, and
+  `llvmir-repl`
 - `clang++` at runtime for `cpp-repl`
+- `wasm-repl` uses Node's built-in WebAssembly runtime and does not require an
+  external Wasm toolchain
 - Objective-C snippets are supported on macOS, where Foundation and the Apple
   Objective-C runtime are available
 
@@ -39,6 +44,7 @@ npx assembly-repl  # Run assembly-repl without a global install.
 
 # or for any of the other repls, e.g. llvmir-repl:
 npx --package=assembly-repl llvmir-repl  # Run llvmir-repl from the same package.
+npx --package=assembly-repl wasm-repl    # Run wasm-repl from the same package.
 ```
 
 Or install globally:
@@ -50,10 +56,12 @@ c-repl                  # Start the C snippet REPL.
 cpp-repl                # Start the C++20 snippet REPL.
 objc-repl               # Start the Objective-C snippet REPL.
 llvmir-repl             # Start the LLVM IR snippet REPL.
+wasm-repl               # Start the WebAssembly instruction REPL.
 ```
 
-The native runners are prebuilt, but `clang` is still required at runtime because
-the REPLs shell out to the compiler for the code you type.
+The native runners are prebuilt, but `clang` is still required at runtime for the
+native and source-language REPLs because they shell out to the compiler for the
+code you type. `wasm-repl` runs through Node's WebAssembly engine instead.
 
 ## Help Lookup
 
@@ -76,6 +84,7 @@ c> state?                 // Show help for the persistent C REPL state.
 cpp> template?            // Show help for reusable C++ template definitions.
 objc> message?            // Show help for Objective-C message sends.
 ir> getelementptr?        // Show help for the LLVM IR pointer instruction.
+wasm> i64.add?            // Show help for a WebAssembly numeric instruction.
 ```
 
 ## `assembly-repl`
@@ -1342,6 +1351,173 @@ Multi-line input is collected until the compiler accepts it. Accepted top-level
 definitions are persisted; accepted statements run inside `repl_entry`. Press
 Enter on an empty continuation line to force diagnostics.
 
+## `wasm-repl`
+
+`wasm-repl` accepts flat WebAssembly text instructions, emits a small Wasm
+module in memory, and executes it through Node's built-in `WebAssembly` API.
+It is useful for learning the Wasm operand stack, numeric instructions,
+globals, and linear memory without installing `wat2wasm` or a separate runtime.
+
+Each accepted line is appended to a generated `repl_entry` function body. The
+whole body is recompiled and executed after each accepted line. If the body
+leaves values on the operand stack, the REPL-generated epilogue stores the top
+`i32`/`i64` value into `$result`, stores the top `f32`/`f64` value into `$f0`,
+and drops older stack values so the generated function validates.
+
+### `wasm-repl`: Quickstart
+
+```bash
+npm i -g assembly-repl  # Install the package globally.
+wasm-repl               # Start the WebAssembly REPL.
+
+wasm> :help             ;; Show commands and WebAssembly help topics.
+wasm> i64.const 40      ;; Push an i64 constant.
+result 0x0000000000000028 (40)
+wasm> i64.const 2       ;; Push another i64 constant.
+result 0x0000000000000002 (2)
+wasm> i64.add           ;; Add the two constants from the accumulated body.
+result 0x000000000000002a (42)
+```
+
+### `wasm-repl`: Examples
+
+<details><summary><h4><code>wasm-repl</code>: Persistent Globals</h4></summary>
+
+Store a value in an imported mutable global and read it back:
+
+```text
+wasm> i64.const 42
+result 0x000000000000002a (42)
+wasm> global.set $u0
+result 0x000000000000002a (42)
+u0  0x000000000000002a
+wasm> global.get $u0
+result 0x000000000000002a (42)
+```
+
+</details>
+
+<details><summary><h4><code>wasm-repl</code>: Linear Memory</h4></summary>
+
+Use the imported memory as scratch storage:
+
+```text
+wasm> i32.const 0
+wasm> i64.const 0xfeedface
+wasm> i64.store
+scratch[0..31] ce fa ed fe 00 00 00 00 ...
+wasm> i32.const 0
+wasm> i64.load
+result 0x00000000feedface (4277009102)
+```
+
+</details>
+
+<details><summary><h4><code>wasm-repl</code>: Full Calculator</h4></summary>
+
+This computes:
+
+```text
+(7 + 35) * 2 = 84
+```
+
+```text
+wasm> :clear
+definitions and WebAssembly body cleared
+wasm> :def
+instruction block started; finish with :end
+wasm| i64.const 7
+wasm| i64.const 35
+wasm| i64.add
+wasm| i64.const 2
+wasm| i64.mul
+wasm| :end
+instruction block committed
+result 0x0000000000000054 (84)
+```
+
+</details>
+
+<details><summary><h4><code>wasm-repl</code>: Host Call Timer</h4></summary>
+
+`$host_time_ms` is an imported host function that returns the host wall clock as
+Unix milliseconds. This stores one timestamp in `$u0`, then clears the body and
+computes elapsed time with a second host call:
+
+```text
+wasm> :clear
+definitions and WebAssembly body cleared
+wasm> :def
+instruction block started; finish with :end
+wasm| call $host_time_ms
+wasm| global.set $u0
+wasm| :end
+instruction block committed
+u0  0x0000019ad5f1d2a0
+wasm> :clear
+definitions and WebAssembly body cleared
+wasm> :def
+instruction block started; finish with :end
+wasm| call $host_time_ms
+wasm| global.get $u0
+wasm| i64.sub
+wasm| :end
+instruction block committed
+result 0x0000000000000037 (55)
+```
+
+The exact timestamp and elapsed millisecond value will be different on your
+machine.
+
+</details>
+
+### `wasm-repl`: Reference
+
+Persistent imports:
+
+```wat
+(import "repl" "host_time_ms" (func $host_time_ms (result i64)))
+(import "repl" "memory" (memory 1))
+(import "repl" "result" (global $result (mut i64)))
+(import "repl" "u0"     (global $u0     (mut i64)))  ;; through $u15
+(import "repl" "f0"     (global $f0     (mut f64)))  ;; through $f15
+```
+
+Built-in host calls:
+
+```wat
+call $print_i64
+call $print_i32
+call $print_f64
+call $host_time_ms
+```
+
+Commands:
+
+- `:help` shows commands and execution notes
+- `:help <topic-or-instruction>` shows built-in help
+- `:topics` lists built-in topic help
+- `:instructions` lists supported WebAssembly instructions
+- `:state` prints persistent globals, result, scratch, and output
+- `:reset` resets persistent state
+- `:scratch` prints scratch memory details
+- `:defs` prints the current instruction block
+- `:def` starts a multi-line instruction block
+- `:end` commits the current instruction block
+- `:body` prints accumulated WebAssembly instructions
+- `:clear` clears the accumulated WebAssembly body
+- `:source` prints the last generated `.wat` file path
+- `:wasm` prints the last generated `.wasm` file path
+- `:quit` exits
+
+Instruction help:
+
+```text
+wasm> i64.add?          ;; Show help for one instruction.
+wasm> :instructions     ;; List supported instructions.
+wasm> :help memory      ;; Show memory/load/store notes.
+```
+
 ## Runtime Internals 🛠️
 
 ### `assembly-repl`: How It Works
@@ -1375,7 +1551,7 @@ The C code extracts the `__TEXT,__text` bytes from that object file, maps them
 with `mmap`, flips the mapping to executable with `mprotect`, clears the
 instruction cache, and calls the resulting function pointer.
 
-### C, C++, Objective-C, And LLVM IR REPLs
+### C, C++, Objective-C, LLVM IR, And WebAssembly REPLs
 
 The source-language REPLs share one native runner, `language-repl`. The public
 entrypoints (`c-repl`, `cpp-repl`, `objc-repl`, and `llvmir-repl`) are Node
@@ -1385,6 +1561,10 @@ Each accepted snippet is written into `.repl-build/`, compiled into a shared
 library with `clang` or `clang++`, loaded into the REPL process with `dlopen`,
 and called through a common `repl_entry` function. State lives in a persistent
 `repl_state_t` struct that is passed to each snippet.
+
+`wasm-repl` is implemented as a Node runner instead of a native runner. It emits
+WebAssembly binaries directly, instantiates them with Node's `WebAssembly` API,
+and writes the generated `.wat` and `.wasm` artifacts into `.repl-build/`.
 
 ## Debugging With LLDB 🔎
 
@@ -1401,6 +1581,7 @@ lldb -- ./language-repl --mode c        # Debug the C mode of language-repl.
 lldb -- ./language-repl --mode cpp      # Debug the C++ mode of language-repl.
 lldb -- ./language-repl --mode objc     # Debug the Objective-C mode of language-repl.
 lldb -- ./language-repl --mode llvmir   # Debug the LLVM IR mode of language-repl.
+# wasm-repl is a Node WebAssembly runner, so it does not use language-repl.
 ```
 
 These correspond to:
@@ -1412,6 +1593,8 @@ These correspond to:
 | `cpp-repl`      | `./language-repl --mode cpp`        |
 | `objc-repl`     | `./language-repl --mode objc`       |
 | `llvmir-repl`   | `./language-repl --mode llvmir`     |
+
+`wasm-repl` is implemented in Node and does not have a native LLDB target.
 
 Inside LLDB:
 

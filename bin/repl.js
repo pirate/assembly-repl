@@ -15,6 +15,7 @@ const modeByCommand = {
     'cpp-repl': 'cpp',
     'objc-repl': 'objc',
     'llvmir-repl': 'llvmir',
+    'wasm-repl': 'wasm',
 };
 const mode = modeByCommand[commandName] || 'asm';
 const promptBaseByMode = {
@@ -23,18 +24,21 @@ const promptBaseByMode = {
     cpp: 'cpp',
     objc: 'objc',
     llvmir: 'ir',
+    wasm: 'wasm',
 };
 const binaryBase = mode === 'asm' ? 'assembly-repl' : 'language-repl';
 const localBinary = path.join(root, mode === 'asm' ? 'asmrepl' : 'language-repl');
 const prebuiltBinary = path.join(root, 'prebuilds', dir, binaryBase);
-const binary = fileExists(localBinary) ? localBinary : prebuiltBinary;
+const binary = mode === 'wasm' ? process.execPath : (fileExists(localBinary) ? localBinary : prebuiltBinary);
 const runtimeDependencies = runtimeDependenciesForMode(mode);
 const args = process.argv.slice(2);
 const noHighlight = args.includes('--no-highlight') ||
     process.env.REPL_NO_HIGHLIGHT === '1' ||
     process.env.ASMREPL_NO_HIGHLIGHT === '1';
 const childArgs = args.filter((arg) => arg !== '--no-highlight');
-const effectiveChildArgs = mode === 'asm' ? childArgs : ['--mode', mode, ...childArgs];
+const effectiveChildArgs = mode === 'wasm'
+    ? [path.join(root, 'bin', 'wasm-runner.js'), ...childArgs]
+    : (mode === 'asm' ? childArgs : ['--mode', mode, ...childArgs]);
 
 if (!ensureExecutable(binary)) {
     console.error(`${commandName}: no prebuilt native runner for ${dir}.`);
@@ -263,12 +267,12 @@ function highlightOutputLine(line, state, modeName = 'asm') {
         return line;
     }
 
-    if (/^(?:asm|c|cpp|objc|ir)[>|] $/.test(line)) {
+    if (/^(?:asm|c|cpp|objc|ir|wasm)[>|] $/.test(line)) {
         state.mode = 'normal';
         return highlightPrompt(line);
     }
 
-    const promptMatch = line.match(/^((?:asm|c|cpp|objc|ir)[>|] )(.*)$/);
+    const promptMatch = line.match(/^((?:asm|c|cpp|objc|ir|wasm)[>|] )(.*)$/);
     if (promptMatch) {
         state.mode = 'normal';
         return highlightPrompt(promptMatch[1]) + highlightOutputLine(promptMatch[2], state, modeName);
@@ -288,7 +292,7 @@ function highlightOutputLine(line, state, modeName = 'asm') {
         return colorAliasesLine(line);
     }
 
-    if (/native assembly REPL/.test(line) || /^(?:C|C\+\+|Objective-C|LLVM IR) REPL/.test(line)) {
+    if (/native assembly REPL/.test(line) || /^(?:C|C\+\+|Objective-C|LLVM IR|WebAssembly) REPL/.test(line)) {
         state.mode = 'normal';
         return colors.bold(line);
     }
@@ -305,16 +309,18 @@ function highlightOutputLine(line, state, modeName = 'asm') {
 
     if (/^Built-in instruction help topics for /.test(line) ||
         /^Built-in help topics for /.test(line) ||
-        /^LLVM IR instructions discovered from /.test(line)) {
+        /^LLVM IR instructions discovered from /.test(line) ||
+        /^WebAssembly instructions supported by /.test(line)) {
         state.mode = 'instruction-list';
         return colorOutputTokens(line, { numbers: false });
     }
 
-    if (/^No built-in help for /.test(line) || /^Could not discover LLVM IR instructions/.test(line)) {
+    if (/^No built-in help for /.test(line) || /^Could not discover LLVM IR instructions/.test(line) ||
+        /^wasm validation failed:/.test(line) || /^WebAssembly (?:compilation failed|trap):/.test(line)) {
         return colors.yellow(line);
     }
 
-    if (/^definition block committed$|^definition block started|^directive persisted$|^state reset$|^register context reset$|^definitions cleared$|^definitions and LLVM IR body cleared$/.test(line)) {
+    if (/^definition block committed$|^definition block started|^instruction block committed$|^instruction block started|^directive persisted$|^state reset$|^register context reset$|^definitions cleared$|^definitions and (?:LLVM IR|WebAssembly) body cleared$/.test(line)) {
         return colors.green(line);
     }
 
@@ -457,6 +463,9 @@ function highlightInput(line, modeName) {
     if (modeName === 'llvmir') {
         return highlightLLVMIR(line);
     }
+    if (modeName === 'wasm') {
+        return highlightWasm(line);
+    }
     return highlightSource(line, modeName);
 }
 
@@ -513,6 +522,30 @@ function highlightLLVMIR(line) {
     addRegexSpans(code, spans, /\b(?:i1|i8|i16|i32|i64|float|double|half)\b/g, colors.blue.bold);
     addRegexSpans(code, spans, /\b(?:0x[0-9a-f]+|-?\d+(?:\.\d+)?)\b/gi, colors.yellow);
     addRegexSpans(code, spans, /[{}()[\],=*]/g, colors.magenta);
+    return renderSpans(code, spans) + colors.dim(comment);
+}
+
+function highlightWasm(line) {
+    if (!colors.enabled || line.length === 0) {
+        return line;
+    }
+
+    const commentIndex = findWasmCommentIndex(line);
+    const code = commentIndex >= 0 ? line.slice(0, commentIndex) : line;
+    const comment = commentIndex >= 0 ? line.slice(commentIndex) : '';
+
+    if (/^\s*:/.test(code)) {
+        return colors.magenta(code) + colors.dim(comment);
+    }
+
+    const spans = [];
+    addRegexSpans(code, spans, /\$[-A-Za-z$._0-9]+/g, colors.cyan);
+    addRegexSpans(code, spans, /\b(?:i32|i64|f32|f64)\.(?:const|load|load8_s|load8_u|load16_s|load16_u|load32_s|load32_u|store|store8|store16|store32|eqz|eq|ne|lt_s|lt_u|lt|gt_s|gt_u|gt|le_s|le_u|le|ge_s|ge_u|ge|clz|ctz|popcnt|add|sub|mul|div_s|div_u|div|rem_s|rem_u|and|or|xor|shl|shr_s|shr_u|rotl|rotr|abs|neg|ceil|floor|trunc|nearest|sqrt|min|max|copysign|wrap_i64|trunc_f32_s|trunc_f32_u|trunc_f64_s|trunc_f64_u|extend_i32_s|extend_i32_u|convert_i32_s|convert_i32_u|convert_i64_s|convert_i64_u|demote_f64|promote_f32|reinterpret_f32|reinterpret_f64|reinterpret_i32|reinterpret_i64|extend8_s|extend16_s|extend32_s)\b/g, colors.green.bold);
+    addRegexSpans(code, spans, /\b(?:global\.get|global\.set|memory\.size|memory\.grow|call|drop|select|nop)\b/g, colors.green.bold);
+    addRegexSpans(code, spans, /\b(?:i32|i64|f32|f64)\b/g, colors.blue.bold);
+    addRegexSpans(code, spans, /\b(?:offset|align)=#?-?(?:0x[0-9a-f]+|\d+)\b/gi, colors.yellow);
+    addRegexSpans(code, spans, /#?-?(?:0x[0-9a-f]+|\b\d+(?:\.\d+)?\b|inf|nan)/gi, colors.yellow);
+    addRegexSpans(code, spans, /[()]/g, colors.magenta);
     return renderSpans(code, spans) + colors.dim(comment);
 }
 
@@ -587,6 +620,14 @@ function findSourceCommentIndex(line) {
     return Math.min(slash, block);
 }
 
+function findWasmCommentIndex(line) {
+    const wat = line.indexOf(';;');
+    const slash = line.indexOf('//');
+    if (wat === -1) return slash;
+    if (slash === -1) return wat;
+    return Math.min(wat, slash);
+}
+
 function executable(file) {
     try {
         fs.accessSync(file, fs.constants.X_OK);
@@ -629,6 +670,10 @@ function commandAvailable(command) {
 }
 
 function runtimeDependenciesForMode(modeName) {
+    if (modeName === 'wasm') {
+        return [];
+    }
+
     if (modeName === 'cpp') {
         return [
             {

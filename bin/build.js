@@ -22,6 +22,7 @@ const expectedBins = {
     'cpp-repl': './bin/cpp-repl.js',
     'objc-repl': './bin/objc-repl.js',
     'llvmir-repl': './bin/llvmir-repl.js',
+    'wasm-repl': './bin/wasm-repl.js',
 };
 const supportedTargets = ['darwin-arm64', 'linux-arm64', 'linux-x64'];
 const nativeRunners = ['assembly-repl', 'language-repl'];
