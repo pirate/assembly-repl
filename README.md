@@ -1663,3 +1663,9 @@ Clean generated files:
 ```sh
 make clean # Remove generated native build outputs.
 ```
+
+## Further Reading
+
+- https://imtomt.github.io/ymawky/
+- https://mariokartwii.com/arm64/
+- https://hrishim.github.io/llvl_prog1_book/starting_assembly.html
