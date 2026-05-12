@@ -16,6 +16,9 @@ const modeByCommand = {
     'objc-repl': 'objc',
     'llvmir-repl': 'llvmir',
     'wasm-repl': 'wasm',
+    'rust-repl': 'rust',
+    'zig-repl': 'zig',
+    'go-repl': 'go',
 };
 const mode = modeByCommand[commandName] || 'asm';
 const promptBaseByMode = {
@@ -25,6 +28,9 @@ const promptBaseByMode = {
     objc: 'objc',
     llvmir: 'ir',
     wasm: 'wasm',
+    rust: 'rust',
+    zig: 'zig',
+    go: 'go',
 };
 const binaryBase = mode === 'asm' ? 'assembly-repl' : 'language-repl';
 const localBinary = path.join(root, mode === 'asm' ? 'asmrepl' : 'language-repl');
@@ -580,12 +586,12 @@ function highlightOutputLine(line, state, modeName = 'asm') {
         return line;
     }
 
-    if (/^(?:asm|c|cpp|objc|ir|wasm)[>|] $/.test(line)) {
+    if (/^(?:asm|c|cpp|objc|ir|wasm|rust|zig|go)[>|] $/.test(line)) {
         state.mode = 'normal';
         return highlightPrompt(line);
     }
 
-    const promptMatch = line.match(/^((?:asm|c|cpp|objc|ir|wasm)[>|] )(.*)$/);
+    const promptMatch = line.match(/^((?:asm|c|cpp|objc|ir|wasm|rust|zig|go)[>|] )(.*)$/);
     if (promptMatch) {
         state.mode = 'normal';
         return highlightPrompt(promptMatch[1]) + highlightOutputLine(promptMatch[2], state, modeName);
@@ -605,7 +611,7 @@ function highlightOutputLine(line, state, modeName = 'asm') {
         return colorAliasesLine(line);
     }
 
-    if (/native assembly REPL/.test(line) || /^(?:C|C\+\+|Objective-C|LLVM IR|WebAssembly) REPL/.test(line)) {
+    if (/native assembly REPL/.test(line) || /^(?:C|C\+\+|Objective-C|LLVM IR|WebAssembly|Rust|Zig|Go) REPL/.test(line)) {
         state.mode = 'normal';
         return colors.bold(line);
     }
@@ -635,7 +641,7 @@ function highlightOutputLine(line, state, modeName = 'asm') {
         return colors.yellow(line);
     }
 
-    if (/^definition block committed$|^definition block started|^instruction block committed$|^instruction block started|^directive persisted$|^state reset$|^register context reset$|^definitions cleared$|^definitions and (?:LLVM IR|WebAssembly) body cleared$/.test(line)) {
+    if (/^definition block committed$|^definition block started|^instruction block committed$|^instruction block started|^directive persisted$|^import (?:persisted|already persisted)$|^state reset$|^register context reset$|^(?:imports and definitions|definitions) cleared$|^definitions and (?:LLVM IR|WebAssembly) body cleared$/.test(line)) {
         return colors.green(line);
     }
 
@@ -806,12 +812,23 @@ function highlightSource(line, modeName) {
     const cKeywords = /\b(?:auto|break|case|char|const|continue|default|do|double|else|enum|extern|float|for|goto|if|inline|int|long|register|return|short|signed|sizeof|static|struct|switch|typedef|union|unsigned|void|volatile|while|_Bool|_Atomic)\b/g;
     const cppKeywords = /\b(?:alignas|alignof|and|and_eq|asm|bitand|bitor|catch|class|concept|const_cast|constexpr|decltype|delete|dynamic_cast|explicit|export|friend|mutable|namespace|new|noexcept|not|operator|or|private|protected|public|reinterpret_cast|requires|static_assert|static_cast|template|this|throw|try|typename|using|virtual|xor)\b/g;
     const objcKeywords = /@(?:autoreleasepool|class|defs|dynamic|encode|end|implementation|interface|private|property|protected|protocol|public|selector|synthesize|try|catch|finally|throw)\b|\b(?:id|SEL|BOOL|YES|NO|nil|self|super|NSInteger|NSUInteger|NSString|NSArray|NSDictionary|NSObject)\b/g;
+    const rustKeywords = /\b(?:as|async|await|break|const|continue|crate|dyn|else|enum|extern|false|fn|for|if|impl|in|let|loop|match|mod|move|mut|pub|ref|return|self|Self|static|struct|super|trait|true|type|unsafe|use|where|while|u8|u16|u32|u64|usize|i8|i16|i32|i64|isize|f32|f64|bool|str)\b/g;
+    const zigKeywords = /\b(?:addrspace|align|allowzero|and|anyframe|anytype|asm|async|await|break|callconv|catch|comptime|const|continue|defer|else|enum|errdefer|error|export|extern|false|fn|for|if|inline|noalias|null|opaque|or|orelse|packed|pub|resume|return|struct|suspend|switch|test|threadlocal|true|try|undefined|union|unreachable|usingnamespace|var|volatile|while|u8|u16|u32|u64|usize|i8|i16|i32|i64|isize|f32|f64|bool|void)\b/g;
+    const goKeywords = /\b(?:break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var|true|false|nil|uint8|uint16|uint32|uint64|uint|uintptr|int8|int16|int32|int64|int|float32|float64|bool|string|byte|rune|any)\b/g;
 
     addRegexSpans(code, spans, cKeywords, colors.green.bold);
     if (modeName === 'cpp') {
         addRegexSpans(code, spans, cppKeywords, colors.green.bold);
     } else if (modeName === 'objc') {
         addRegexSpans(code, spans, objcKeywords, colors.green.bold);
+    } else if (modeName === 'rust') {
+        addRegexSpans(code, spans, rustKeywords, colors.green.bold);
+        addRegexSpans(code, spans, /\b[A-Za-z_]\w*!/g, colors.blue.bold);
+    } else if (modeName === 'zig') {
+        addRegexSpans(code, spans, zigKeywords, colors.green.bold);
+        addRegexSpans(code, spans, /@\w+/g, colors.blue.bold);
+    } else if (modeName === 'go') {
+        addRegexSpans(code, spans, goKeywords, colors.green.bold);
     }
 
     addRegexSpans(code, spans, /[{}()[\],.;*+\-/=%!<>?:&|]/g, colors.magenta);
@@ -980,7 +997,8 @@ function ensureExecutable(file) {
 }
 
 function commandAvailable(command) {
-    const result = spawnSync(command, ['--version'], { stdio: 'ignore' });
+    const args = command === 'go' || command === 'zig' ? ['version'] : ['--version'];
+    const result = spawnSync(command, args, { stdio: 'ignore' });
     return !result.error && result.status === 0;
 }
 
@@ -1013,6 +1031,33 @@ function runtimeDependenciesForMode(modeName) {
         ];
     }
 
+    if (modeName === 'rust') {
+        return [
+            {
+                command: 'rustc',
+                reason: 'rust-repl compiles each snippet with rustc at runtime.',
+            },
+        ];
+    }
+
+    if (modeName === 'zig') {
+        return [
+            {
+                command: 'zig',
+                reason: 'zig-repl compiles each snippet with zig at runtime.',
+            },
+        ];
+    }
+
+    if (modeName === 'go') {
+        return [
+            {
+                command: 'go',
+                reason: 'go-repl builds and runs each snippet with the Go toolchain at runtime.',
+            },
+        ];
+    }
+
     return [
         {
             command: 'clang',
@@ -1032,10 +1077,48 @@ function printMissingDependencyError(command, dependencies) {
     }
     console.error('');
     console.error(`Install ${dependencies.length === 1 ? dependencies[0].command : 'the missing tools'}, then run ${command} again.`);
-    console.error('macOS:        xcode-select --install');
-    console.error('Debian/Ubuntu: sudo apt install clang');
-    console.error('Fedora:       sudo dnf install clang');
-    console.error('Arch:         sudo pacman -S clang');
+    for (const dependency of dependencies) {
+        printDependencyInstallHints(dependency.command);
+    }
+}
+
+function printDependencyInstallHints(command) {
+    const hints = {
+        clang: [
+            'macOS:        xcode-select --install',
+            'Debian/Ubuntu: sudo apt install clang',
+            'Fedora:       sudo dnf install clang',
+            'Arch:         sudo pacman -S clang',
+        ],
+        'clang++': [
+            'macOS:        xcode-select --install',
+            'Debian/Ubuntu: sudo apt install clang',
+            'Fedora:       sudo dnf install clang',
+            'Arch:         sudo pacman -S clang',
+        ],
+        rustc: [
+            'macOS:        brew install rust',
+            'Debian/Ubuntu: sudo apt install rustc',
+            'Fedora:       sudo dnf install rust',
+            'Arch:         sudo pacman -S rust',
+        ],
+        zig: [
+            'macOS:        brew install zig',
+            'Debian/Ubuntu: install Zig from https://ziglang.org/download/',
+            'Fedora:       sudo dnf install zig',
+            'Arch:         sudo pacman -S zig',
+        ],
+        go: [
+            'macOS:        brew install go',
+            'Debian/Ubuntu: sudo apt install golang-go',
+            'Fedora:       sudo dnf install golang',
+            'Arch:         sudo pacman -S go',
+        ],
+    };
+    const lines = hints[command] || [`Install ${command} and make sure it is on PATH.`];
+    for (const line of lines) {
+        console.error(line);
+    }
 }
 
 function rangesOverlap(aStart, aEnd, bStart, bEnd) {

@@ -1,16 +1,17 @@
-# 🧪 `assembly-repl`, <br/>`llvmir-repl`, `cpp-repl`, `c-repl`, `objc-repl`, `wasm-repl`
+# 🧪 `assembly-repl`, <br/>`llvmir-repl`, `cpp-repl`, `c-repl`, `objc-repl`, `wasm-repl`, `rust-repl`, `zig-repl`, `go-repl`
 
-A small family of low-level REPLs for learning assembly, WebAssembly, and LLVM IR.
+A small family of low-level REPLs for learning assembly, WebAssembly, LLVM IR,
+and compiled systems languages.
 
 Type assembly, run it directly on the CPU, and immediately see the register
 state that came back. You can enter single instructions or define normal
 assembly routines with labels and indentation, then call them later with `bl`
 (arm64) or `call` (x86_64).
 
-This is an educational toy for learning assembly, WebAssembly, and LLVM IR. It is
-not a sandbox, emulator, or production debugger. If you ask it to crash, loop
-forever, corrupt memory, or jump into nonsense, it will probably do exactly
-that. 🔥
+This is an educational toy for learning assembly, WebAssembly, LLVM IR, and
+compiled snippets. It is not a sandbox, emulator, or production debugger. If you
+ask it to crash, loop forever, corrupt memory, or jump into nonsense, it will
+probably do exactly that. 🔥
 
 ## Included REPLs ⚙️
 
@@ -20,16 +21,26 @@ that. 🔥
 - `objc-repl`: Objective-C snippet REPL on macOS
 - `llvmir-repl`: LLVM IR snippet REPL
 - `wasm-repl`: WebAssembly instruction REPL
+- `rust-repl`: Rust snippet REPL
+- `zig-repl`: Zig snippet REPL
+- `go-repl`: Go snippet REPL
 
 ## Requirements
 
 - `clang` at runtime for `assembly-repl`, `c-repl`, `objc-repl`, and
   `llvmir-repl`
 - `clang++` at runtime for `cpp-repl`
+- `rustc` at runtime for `rust-repl`
+- `zig` at runtime for `zig-repl`
+- `go` at runtime for `go-repl`
 - `wasm-repl` uses Node's built-in WebAssembly runtime and does not require an
   external Wasm toolchain
 - Objective-C snippets are supported on macOS, where Foundation and the Apple
   Objective-C runtime are available
+
+The npm package bundles the REPL runners, but it does not install language
+runtimes or compilers. If a required compiler is missing, the command exits with
+install hints for that dependency.
 
 ## Install 🚀
 
@@ -45,6 +56,9 @@ npx assembly-repl  # Run assembly-repl without a global install.
 # or for any of the other repls, e.g. llvmir-repl:
 npx --package=assembly-repl llvmir-repl  # Run llvmir-repl from the same package.
 npx --package=assembly-repl wasm-repl    # Run wasm-repl from the same package.
+npx --package=assembly-repl rust-repl    # Run rust-repl from the same package.
+npx --package=assembly-repl zig-repl     # Run zig-repl from the same package.
+npx --package=assembly-repl go-repl      # Run go-repl from the same package.
 ```
 
 Or install globally:
@@ -57,11 +71,14 @@ cpp-repl                # Start the C++20 snippet REPL.
 objc-repl               # Start the Objective-C snippet REPL.
 llvmir-repl             # Start the LLVM IR snippet REPL.
 wasm-repl               # Start the WebAssembly instruction REPL.
+rust-repl               # Start the Rust snippet REPL.
+zig-repl                # Start the Zig snippet REPL.
+go-repl                 # Start the Go snippet REPL.
 ```
 
-The native runners are prebuilt, but `clang` is still required at runtime for the
-native and source-language REPLs because they shell out to the compiler for the
-code you type. `wasm-repl` runs through Node's WebAssembly engine instead.
+The native runners are prebuilt, but the source-language REPLs still shell out to
+their compilers for the code you type. `wasm-repl` runs through Node's
+WebAssembly engine instead.
 
 ## Help Lookup
 
@@ -85,6 +102,9 @@ cpp> template?            // Show help for reusable C++ template definitions.
 objc> message?            // Show help for Objective-C message sends.
 ir> getelementptr?        // Show help for the LLVM IR pointer instruction.
 wasm> i64.add?            // Show help for a WebAssembly numeric instruction.
+rust> unsafe?             // Show help for unsafe Rust and external calls.
+zig> extern?              // Show help for Zig external calls.
+go> syscall?              // Show help for Go syscall examples.
 ```
 
 ## `assembly-repl`
@@ -1082,6 +1102,7 @@ Commands:
 - `:help` shows commands and execution notes
 - `:help <topic>` shows built-in help for a topic
 - `:topics` lists built-in topic help
+- `:instructions` lists built-in topic help
 - `:state` prints persistent slots, result, and output
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
@@ -1206,6 +1227,7 @@ Commands:
 - `:help` shows commands and execution notes
 - `:help <topic>` shows built-in help for a topic
 - `:topics` lists built-in topic help
+- `:instructions` lists built-in topic help
 - `:state` prints persistent slots, result, and output
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
@@ -1337,6 +1359,7 @@ Commands:
 - `:help` shows commands and execution notes
 - `:help <topic>` shows built-in help for a topic
 - `:topics` lists built-in topic help
+- `:instructions` lists built-in topic help
 - `:state` prints persistent slots, result, and output
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
@@ -1518,6 +1541,332 @@ wasm> :instructions     ;; List supported instructions.
 wasm> :help memory      ;; Show memory/load/store notes.
 ```
 
+## `rust-repl`
+
+`rust-repl` compiles snippets with `rustc` as Rust 2021 shared libraries and
+loads them into the REPL process. Each executable snippet runs inside:
+
+```rust
+pub unsafe extern "C" fn repl_entry(state: *mut ReplState) {
+    let state = unsafe { &mut *state };
+    /* your snippet */
+}
+```
+
+Use it for small Rust experiments, unsafe code, FFI calls, and helper functions
+while keeping persistent state between snippets.
+
+### `rust-repl`: Quickstart
+
+```bash
+npm i -g assembly-repl  # Install the package globally.
+rust-repl               # Start the Rust REPL.
+
+rust> :help                            // Show commands and Rust help topics.
+rust> state.result = 40 + 2;           // Compute 42 and store it as the printed result.
+result 0x000000000000002a (42)
+```
+
+### `rust-repl`: Examples
+
+<details><summary><h4><code>rust-repl</code>: Basics</h4></summary>
+
+```text
+rust> state.u64[0] = 41;               // Store 41 in persistent integer slot 0.
+rust> state.u64[0] += 1; state.result = state.u64[0];  // Increment and publish the result.
+result 0x000000000000002a (42)
+```
+
+</details>
+
+<details><summary><h4><code>rust-repl</code>: Making a System Call</h4></summary>
+
+```text
+rust> :def
+rust| unsafe extern "C" { fn getpid() -> i32; }
+rust| :end
+definition block committed
+rust> state.result = unsafe { getpid() as u64 };
+result 0x0000000000001234 (4660)
+```
+
+The exact process id will be different on your machine.
+
+</details>
+
+<details><summary><h4><code>rust-repl</code>: Full Calculator</h4></summary>
+
+This computes:
+
+```text
+(7 + 35) * 2 = 84
+```
+
+```text
+rust> :def
+rust| fn calc_add(a: u64, b: u64) -> u64 { a + b }
+rust| fn calc_mul(a: u64, b: u64) -> u64 { a * b }
+rust| :end
+definition block committed
+rust> state.result = calc_mul(calc_add(7, 35), 2);
+result 0x0000000000000054 (84)
+```
+
+</details>
+
+### `rust-repl`: Reference
+
+Persistent state:
+
+```rust
+state.result       /* u64 result value printed after each run */
+state.u64[n]       /* 16 persistent integer slots */
+state.f64[n]       /* 16 persistent f64 slots */
+state.scratch[n]   /* 4096 bytes of persistent scratch memory */
+state.out          /* 4096-byte output buffer used by repl_print!(...) */
+```
+
+Convenience helper:
+
+```rust
+repl_print!(state, "value={}\n", state.u64[0]);  /* Append formatted text to state.out. */
+```
+
+Commands:
+
+- `:help` shows commands and execution notes
+- `:help <topic>` shows built-in help for a topic
+- `:topics` lists built-in topic help
+- `:instructions` lists built-in topic help
+- `:state` prints persistent slots, result, and output
+- `:reset` resets persistent state
+- `:scratch` prints scratch memory details
+- `:defs` prints persisted definitions
+- `:def` starts a persisted definition block
+- `:end` commits the current definition block
+- `:clear` clears definitions
+- `:source` prints the last generated source file path
+- `:quit` exits
+
+Multi-line input is collected until `rustc` accepts it. Accepted top-level
+definitions are persisted; accepted statements run inside `repl_entry`. Press
+Enter on an empty continuation line to force diagnostics.
+
+## `zig-repl`
+
+`zig-repl` compiles snippets with `zig` as dynamic libraries and loads them into
+the REPL process. Each executable snippet runs inside:
+
+```zig
+export fn repl_entry(state: *ReplState) callconv(.c) void {
+    /* your snippet */
+}
+```
+
+Use it for Zig expressions, pointer experiments, C ABI calls, and small helper
+functions with persistent state between snippets.
+
+### `zig-repl`: Quickstart
+
+```bash
+npm i -g assembly-repl  # Install the package globally.
+zig-repl                # Start the Zig REPL.
+
+zig> :help                             // Show commands and Zig help topics.
+zig> state.result = 40 + 2;            // Compute 42 and store it as the printed result.
+result 0x000000000000002a (42)
+```
+
+### `zig-repl`: Examples
+
+<details><summary><h4><code>zig-repl</code>: Basics</h4></summary>
+
+```text
+zig> state.u[0] = 41;                  // Store 41 in persistent integer slot 0.
+zig> state.u[0] += 1; state.result = state.u[0];  // Increment and publish the result.
+result 0x000000000000002a (42)
+```
+
+</details>
+
+<details><summary><h4><code>zig-repl</code>: Making a System Call</h4></summary>
+
+```text
+zig> :def
+zig| extern fn getpid() c_int;
+zig| :end
+definition block committed
+zig> state.result = @as(u64, @intCast(getpid()));
+result 0x0000000000001234 (4660)
+```
+
+The exact process id will be different on your machine.
+
+</details>
+
+<details><summary><h4><code>zig-repl</code>: Full Calculator</h4></summary>
+
+This computes:
+
+```text
+(7 + 35) * 2 = 84
+```
+
+```text
+zig> :def
+zig| fn calcAdd(a: u64, b: u64) u64 { return a + b; }
+zig| fn calcMul(a: u64, b: u64) u64 { return a * b; }
+zig| :end
+definition block committed
+zig> state.result = calcMul(calcAdd(7, 35), 2);
+result 0x0000000000000054 (84)
+```
+
+</details>
+
+### `zig-repl`: Reference
+
+Persistent state:
+
+```zig
+state.result       /* u64 result value printed after each run */
+state.u[n]         /* 16 persistent integer slots */
+state.f[n]         /* 16 persistent f64 slots */
+state.scratch[n]   /* 4096 bytes of persistent scratch memory */
+state.out          /* 4096-byte output buffer used by print(...) */
+```
+
+Convenience helper:
+
+```zig
+print(state, "value={}\n", .{state.u[0]});  /* Append formatted text to state.out. */
+```
+
+Commands:
+
+- `:help` shows commands and execution notes
+- `:help <topic>` shows built-in help for a topic
+- `:topics` lists built-in topic help
+- `:instructions` lists built-in topic help
+- `:state` prints persistent slots, result, and output
+- `:reset` resets persistent state
+- `:scratch` prints scratch memory details
+- `:defs` prints persisted definitions
+- `:def` starts a persisted definition block
+- `:end` commits the current definition block
+- `:clear` clears definitions
+- `:source` prints the last generated source file path
+- `:quit` exits
+
+Multi-line input is collected until `zig` accepts it. Accepted top-level
+definitions are persisted; accepted statements run inside `repl_entry`. Press
+Enter on an empty continuation line to force diagnostics.
+
+## `go-repl`
+
+`go-repl` uses a gore-style build/run loop: each accepted snippet is emitted as
+a temporary Go program, built with `go build`, and run as a child process. The
+REPL serializes persistent state before and after each run.
+
+Use it for small Go experiments, helper functions, and low-level package calls
+without keeping a full source file open.
+
+### `go-repl`: Quickstart
+
+```bash
+npm i -g assembly-repl  # Install the package globally.
+go-repl                 # Start the Go REPL.
+
+go> :help                              // Show commands and Go help topics.
+go> state.Result = 40 + 2              // Compute 42 and store it as the printed result.
+result 0x000000000000002a (42)
+```
+
+### `go-repl`: Examples
+
+<details><summary><h4><code>go-repl</code>: Basics</h4></summary>
+
+```text
+go> state.U[0] = 41                    // Store 41 in persistent integer slot 0.
+go> state.U[0] += 1; state.Result = state.U[0]  // Increment and publish the result.
+result 0x000000000000002a (42)
+```
+
+</details>
+
+<details><summary><h4><code>go-repl</code>: Making a System Call</h4></summary>
+
+`syscall` is imported by default for low-level examples:
+
+```text
+go> pid, _, errno := syscall.RawSyscall(syscall.SYS_GETPID, 0, 0, 0)
+go| if errno == 0 { state.Result = uint64(pid) }
+result 0x0000000000001234 (4660)
+```
+
+The exact process id will be different on your machine.
+
+</details>
+
+<details><summary><h4><code>go-repl</code>: Full Calculator</h4></summary>
+
+This computes:
+
+```text
+(7 + 35) * 2 = 84
+```
+
+```text
+go> :def
+go| func calcAdd(a, b uint64) uint64 { return a + b }
+go| func calcMul(a, b uint64) uint64 { return a * b }
+go| :end
+definition block committed
+go> state.Result = calcMul(calcAdd(7, 35), 2)
+result 0x0000000000000054 (84)
+```
+
+</details>
+
+### `go-repl`: Reference
+
+Persistent state:
+
+```go
+state.Result      /* uint64 result value printed after each run */
+state.U[n]        /* 16 persistent integer slots */
+state.F[n]        /* 16 persistent float64 slots */
+state.Scratch[n]  /* 4096 bytes of persistent scratch memory */
+state.Out         /* 4096-byte output buffer used by Print(...) */
+```
+
+Convenience helper:
+
+```go
+Print(state, "value=%d\n", state.U[0])  /* Append formatted text to state.Out. */
+```
+
+Commands:
+
+- `:help` shows commands and execution notes
+- `:help <topic>` shows built-in help for a topic
+- `:topics` lists built-in topic help
+- `:instructions` lists built-in topic help
+- `:import <package>` persists an extra Go package import
+- `:state` prints persistent slots, result, and output
+- `:reset` resets persistent state
+- `:scratch` prints scratch memory details
+- `:defs` prints persisted imports and definitions
+- `:def` starts a persisted definition block
+- `:end` commits the current definition block
+- `:clear` clears imports and definitions
+- `:source` prints the last generated source file path
+- `:quit` exits
+
+Multi-line input is collected until `go build` accepts it. Accepted top-level
+definitions are persisted; accepted statements run inside `replEntry`. Press
+Enter on an empty continuation line to force diagnostics.
+
 ## Runtime Internals 🛠️
 
 ### `assembly-repl`: How It Works
@@ -1551,16 +1900,21 @@ The C code extracts the `__TEXT,__text` bytes from that object file, maps them
 with `mmap`, flips the mapping to executable with `mprotect`, clears the
 instruction cache, and calls the resulting function pointer.
 
-### C, C++, Objective-C, LLVM IR, And WebAssembly REPLs
+### Source-Language, LLVM IR, And WebAssembly REPLs
 
 The source-language REPLs share one native runner, `language-repl`. The public
-entrypoints (`c-repl`, `cpp-repl`, `objc-repl`, and `llvmir-repl`) are Node
-wrappers that choose a language mode and launch that native runner.
+entrypoints (`c-repl`, `cpp-repl`, `objc-repl`, `llvmir-repl`, `rust-repl`,
+`zig-repl`, and `go-repl`) are Node wrappers that choose a language mode and
+launch that native runner.
 
-Each accepted snippet is written into `.repl-build/`, compiled into a shared
-library with `clang` or `clang++`, loaded into the REPL process with `dlopen`,
-and called through a common `repl_entry` function. State lives in a persistent
-`repl_state_t` struct that is passed to each snippet.
+For C, C++, Objective-C, LLVM IR, Rust, and Zig, each accepted snippet is written
+into `.repl-build/`, compiled into a shared library, loaded into the REPL
+process with `dlopen`, and called through a common `repl_entry` function. State
+lives in a persistent `repl_state_t` struct that is passed to each snippet.
+
+`go-repl` writes a temporary Go program instead of a shared library. The native
+runner serializes the REPL state to a `.bin` file, runs the compiled Go child
+process, then reads the state file back after the child exits.
 
 `wasm-repl` is implemented as a Node runner instead of a native runner. It emits
 WebAssembly binaries directly, instantiates them with Node's `WebAssembly` API,

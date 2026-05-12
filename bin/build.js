@@ -23,6 +23,9 @@ const expectedBins = {
     'objc-repl': './bin/objc-repl.js',
     'llvmir-repl': './bin/llvmir-repl.js',
     'wasm-repl': './bin/wasm-repl.js',
+    'rust-repl': './bin/rust-repl.js',
+    'zig-repl': './bin/zig-repl.js',
+    'go-repl': './bin/go-repl.js',
 };
 const supportedTargets = ['darwin-arm64', 'linux-arm64', 'linux-x64'];
 const nativeRunners = ['assembly-repl', 'language-repl'];

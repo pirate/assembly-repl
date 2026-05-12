@@ -49,6 +49,9 @@ typedef enum {
     MODE_CPP,
     MODE_OBJC,
     MODE_LLVMIR,
+    MODE_RUST,
+    MODE_ZIG,
+    MODE_GO,
 } repl_mode_t;
 
 typedef struct {
@@ -214,6 +217,9 @@ static const char *mode_name(repl_mode_t mode) {
         case MODE_CPP: return "cpp";
         case MODE_OBJC: return "objc";
         case MODE_LLVMIR: return "ir";
+        case MODE_RUST: return "rust";
+        case MODE_ZIG: return "zig";
+        case MODE_GO: return "go";
     }
     return "repl";
 }
@@ -224,6 +230,9 @@ static const char *mode_title(repl_mode_t mode) {
         case MODE_CPP: return "C++";
         case MODE_OBJC: return "Objective-C";
         case MODE_LLVMIR: return "LLVM IR";
+        case MODE_RUST: return "Rust";
+        case MODE_ZIG: return "Zig";
+        case MODE_GO: return "Go";
     }
     return "source";
 }
@@ -234,11 +243,19 @@ static const char *mode_extension(repl_mode_t mode) {
         case MODE_CPP: return ".cc";
         case MODE_OBJC: return ".m";
         case MODE_LLVMIR: return ".ll";
+        case MODE_RUST: return ".rs";
+        case MODE_ZIG: return ".zig";
+        case MODE_GO: return ".go";
     }
     return ".txt";
 }
 
 static bool mode_is_statement_repl(repl_mode_t mode) {
+    return mode == MODE_C || mode == MODE_CPP || mode == MODE_OBJC ||
+        mode == MODE_RUST || mode == MODE_ZIG || mode == MODE_GO;
+}
+
+static bool mode_uses_preprocessor_directives(repl_mode_t mode) {
     return mode == MODE_C || mode == MODE_CPP || mode == MODE_OBJC;
 }
 
@@ -250,6 +267,12 @@ static const char *compiler_command(repl_mode_t mode) {
             return "clang";
         case MODE_CPP:
             return "clang++";
+        case MODE_RUST:
+            return "rustc";
+        case MODE_ZIG:
+            return "zig";
+        case MODE_GO:
+            return "go";
     }
     return NULL;
 }
@@ -499,6 +522,30 @@ static const topic_help_t ir_topics[] = {
     {"br", "phi", "Branch to labels and join values with phi.", "br label %name\nbr i1 %cond, label %yes, label %no\nname:", "br label %done\ndone:", "A terminator ends the current basic block; malformed control flow will be rejected by LLVM."},
     {"call", "declare", "Call a declared function.", "%x = call i64 @fn(i64 %arg)", ":def\ndeclare i32 @puts(ptr)\n:end", "External calls from a shared library depend on platform dynamic linking behavior."},
     {"ret", NULL, "Return from the generated entry function.", "ret void", "ret void", "If you type ret void, later appended instructions will be unreachable or invalid until :clear."},
+};
+
+static const topic_help_t rust_topics[] = {
+    {"state", "slot slots", "Persistent REPL state shared by every compiled snippet.", "state.result\nstate.u64[n]\nstate.f64[n]\nstate.scratch[n]", "state.result = 42;\nstate.u64[0] += 1;\nstate.scratch[0] = 0xaa;", "Snippets run inside unsafe extern \"C\" fn repl_entry(state: *mut ReplState)."},
+    {"print", "out", "Append formatted text to the REPL output buffer.", "repl_print!(state, \"format\", args...)", "repl_print!(state, \"answer={}\\n\", state.u64[0]);", "This writes into state.out, then the host prints it after the snippet returns."},
+    {"use", "import", "Persist a Rust use declaration.", "use std::time::SystemTime;", "use std::time::SystemTime;\n:defs", "Use declarations belong in normal input or :def blocks and are persisted as definitions."},
+    {"function", "fn def", "Persist helper functions, structs, and constants.", "fn square(x: u64) -> u64 {\n    x * x\n}", "fn twice(x: u64) -> u64 { x * 2 }\nstate.result = twice(21);", "Multi-line input is collected until rustc accepts it."},
+    {"unsafe", "extern syscall", "Call unsafe or external functions from a snippet.", "unsafe { ... }", "unsafe extern \"C\" { fn getpid() -> i32; }\nstate.result = unsafe { getpid() as u64 };", "Unsafe Rust is still unsafe; crashes and invalid memory writes are not sandboxed."},
+};
+
+static const topic_help_t zig_topics[] = {
+    {"state", "slot slots", "Persistent REPL state shared by every compiled snippet.", "state.result\nstate.u[n]\nstate.f[n]\nstate.scratch[n]", "state.result = 42;\nstate.u[0] += 1;\nstate.scratch[0] = 0xaa;", "The Zig ReplState field is named u instead of u64 because u64 is a type name."},
+    {"print", "out", "Append formatted text to the REPL output buffer.", "print(state, \"format\", .{args...})", "print(state, \"answer={}\\n\", .{state.u[0]});", "This writes into state.out, then the host prints it after the snippet returns."},
+    {"import", "std", "Use Zig imports and aliases.", "const math = std.math;", "const math = std.math;\n:defs", "std is imported for you. Persist aliases in normal input or :def blocks."},
+    {"function", "fn def", "Persist helper functions and types.", "fn square(x: u64) u64 {\n    return x * x;\n}", "fn twice(x: u64) u64 { return x * 2; }\nstate.result = twice(21);", "Multi-line input is collected until zig accepts it."},
+    {"extern", "syscall", "Call external C ABI functions.", "extern fn getpid() c_int;", "extern fn getpid() c_int;\nstate.result = @as(u64, @intCast(getpid()));", "External calls depend on the host platform and dynamic linker."},
+};
+
+static const topic_help_t go_topics[] = {
+    {"state", "slot slots", "Persistent REPL state shared by every built snippet.", "state.Result\nstate.U[n]\nstate.F[n]\nstate.Scratch[n]", "state.Result = 42\nstate.U[0] += 1\nstate.Scratch[0] = 0xaa", "Go snippets run in a child process; the REPL serializes state before and after each run."},
+    {"print", "fmt out", "Append formatted text to the REPL output buffer.", "Print(state, \"format\", args...)", "Print(state, \"answer=%d\\n\", state.U[0])", "This writes into state.Out, then the host prints it after the snippet returns."},
+    {"function", "func def", "Persist helper functions and types.", "func square(x uint64) uint64 {\n    return x * x\n}", "func twice(x uint64) uint64 { return x * 2 }\nstate.Result = twice(21)", "Multi-line input is collected until go build accepts it."},
+    {"syscall", "system call", "Use Go's syscall package from a snippet.", "syscall.RawSyscall(syscall.SYS_GETPID, 0, 0, 0)", "pid, _, errno := syscall.RawSyscall(syscall.SYS_GETPID, 0, 0, 0)\nif errno == 0 { state.Result = uint64(pid) }", "syscall is imported by default for low-level examples."},
+    {"gore", "go build", "Go execution follows the gore-style build/run loop.", "go build generated-file.go && ./generated-file .repl-build/go-state-*.bin", "state.Result = uint64(os.Getpid())", "Each accepted input is compiled into a temporary Go program and run as a child process."},
 };
 
 static void ir_instruction_list_init(ir_instruction_list_t *list) {
@@ -937,6 +984,15 @@ static const topic_help_t *topics_for_mode(repl_mode_t mode, size_t *count) {
         case MODE_LLVMIR:
             *count = sizeof(ir_topics) / sizeof(ir_topics[0]);
             return ir_topics;
+        case MODE_RUST:
+            *count = sizeof(rust_topics) / sizeof(rust_topics[0]);
+            return rust_topics;
+        case MODE_ZIG:
+            *count = sizeof(zig_topics) / sizeof(zig_topics[0]);
+            return zig_topics;
+        case MODE_GO:
+            *count = sizeof(go_topics) / sizeof(go_topics[0]);
+            return go_topics;
     }
     *count = 0;
     return NULL;
@@ -1122,34 +1178,72 @@ static void print_help(repl_mode_t mode) {
     puts("  :topics            list built-in help topics");
     if (mode == MODE_LLVMIR) {
         puts("  :instructions      discover LLVM IR instructions from the toolchain");
+    } else {
+        puts("  :instructions      list built-in help topics");
     }
     puts("  :state             print persistent REPL state");
     puts("  :reset             reset persistent REPL state");
     puts("  :scratch           print scratch memory size and first bytes");
     puts("  :defs              print persisted definitions");
+    if (mode == MODE_GO) {
+        puts("  :import <package>  persist an extra Go import path");
+    }
     puts("  :def               start a persisted definition block");
     puts("  :end               commit the current definition block");
-    puts("  :clear             clear definitions and LLVM IR body");
+    if (mode == MODE_LLVMIR) {
+        puts("  :clear             clear definitions and LLVM IR body");
+    } else if (mode == MODE_GO) {
+        puts("  :clear             clear imports and persisted definitions");
+    } else {
+        puts("  :clear             clear persisted definitions");
+    }
     puts("  :source            print the last generated source/IR file path");
     puts("  :quit              exit");
     puts("");
     puts("Help topics:");
-    puts("  Add ? after a topic, for example state? or store?.");
+    if (mode == MODE_LLVMIR) {
+        puts("  Add ? after a topic, for example state? or store?.");
+    } else if (mode == MODE_GO) {
+        puts("  Add ? after a topic, for example state? or syscall?.");
+    } else {
+        puts("  Add ? after a topic, for example state? or function?.");
+    }
     puts("");
     puts("Startup flags for the public command:");
     puts("  --debugger         launch this REPL under LLDB, or GDB if LLDB is unavailable");
     puts("  --debugger=<name>  use lldb, lldb-gui, gdb, gdb-tui, cgdb, or pwnbg");
     puts("  --lldb / --gdb     launch under LLDB or GDB explicitly");
     puts("");
-    if (mode_is_statement_repl(mode)) {
+    if (mode == MODE_GO) {
         puts("Execution model:");
-        puts("  Normal input is compiled inside void repl_entry(repl_state_t *state).");
+        puts("  Normal input is compiled inside func replEntry(state *ReplState).");
+        puts("  Multi-line input continues until go build accepts it.");
+        puts("  Accepted top-level definitions are persisted; accepted statements run.");
+        puts("  Go snippets run in a child process with serialized persistent state.");
+        puts("  Persistent helpers: state.U[n], state.F[n], state.Scratch[n], state.Result, Print(...).");
+    } else if (mode_is_statement_repl(mode)) {
+        puts("Execution model:");
+        if (mode == MODE_RUST) {
+            puts("  Normal input is compiled inside unsafe extern \"C\" fn repl_entry(state: *mut ReplState).");
+        } else if (mode == MODE_ZIG) {
+            puts("  Normal input is compiled inside export fn repl_entry(state: *ReplState).");
+        } else {
+            puts("  Normal input is compiled inside void repl_entry(repl_state_t *state).");
+        }
         puts("  Multi-line input continues until the compiler accepts it.");
         puts("  Press Enter on an empty continuation line to force diagnostics.");
         puts("  Accepted top-level definitions are persisted; accepted statements run.");
-        puts("  Lines beginning with # are persisted as preprocessor directives.");
+        if (mode_uses_preprocessor_directives(mode)) {
+            puts("  Lines beginning with # are persisted as preprocessor directives.");
+        }
         puts("  :def ... :end is still available when you want explicit definition mode.");
-        puts("  Persistent helpers: U(n), F(n), SCRATCH(n), print(...), state->result.");
+        if (mode == MODE_RUST) {
+            puts("  Persistent helpers: state.u64[n], state.f64[n], state.scratch[n], state.result, repl_print!(...).");
+        } else if (mode == MODE_ZIG) {
+            puts("  Persistent helpers: state.u[n], state.f[n], state.scratch[n], state.result, print(...).");
+        } else {
+            puts("  Persistent helpers: U(n), F(n), SCRATCH(n), print(...), state->result.");
+        }
     } else if (mode == MODE_LLVMIR) {
         puts("Execution model:");
         puts("  Each non-command line is appended to the current LLVM IR function body.");
@@ -1158,8 +1252,13 @@ static void print_help(repl_mode_t mode) {
     }
     puts("");
     puts("Safety:");
-    puts("  Generated code runs in this process through a shared library.");
-    puts("  Crashes, infinite loops, invalid memory writes, and unsafe calls are not sandboxed.");
+    if (mode == MODE_GO) {
+        puts("  Generated Go code runs in a child process.");
+        puts("  Infinite loops, large allocations, and unsafe calls are not sandboxed.");
+    } else {
+        puts("  Generated code runs in this process through a shared library.");
+        puts("  Crashes, infinite loops, invalid memory writes, and unsafe calls are not sandboxed.");
+    }
 }
 
 static bool write_common_c_header(FILE *fp, repl_mode_t mode) {
@@ -1202,7 +1301,285 @@ static bool write_common_c_header(FILE *fp, repl_mode_t mode) {
     return ferror(fp) == 0;
 }
 
-static bool write_statement_source(const char *path, repl_mode_t mode, const char *definitions, const char *line) {
+static void write_optional_block(FILE *fp, const char *text) {
+    if (text && text[0] != '\0') {
+        fputs(text, fp);
+        if (text[strlen(text) - 1] != '\n') {
+            fputc('\n', fp);
+        }
+    }
+}
+
+static bool write_rust_source(const char *path, const char *definitions,
+                              const char *candidate_definition, const char *line) {
+    FILE *fp = fopen(path, "w");
+    if (!fp) {
+        perror(path);
+        return false;
+    }
+
+    fputs("#![allow(dead_code, unused_imports, unused_variables, unused_mut, non_snake_case)]\n\n", fp);
+    fputs("#[repr(C)]\n", fp);
+    fputs("pub struct ReplState {\n", fp);
+    fputs("    pub u64: [u64; 16],\n", fp);
+    fputs("    pub f64: [f64; 16],\n", fp);
+    fputs("    pub scratch: [u8; 4096],\n", fp);
+    fputs("    pub out: [i8; 4096],\n", fp);
+    fputs("    pub result: u64,\n", fp);
+    fputs("}\n\n", fp);
+    fputs("impl ReplState {\n", fp);
+    fputs("    pub fn clear_out(&mut self) { self.out[0] = 0; }\n", fp);
+    fputs("    pub fn push_str(&mut self, text: &str) {\n", fp);
+    fputs("        let mut used = 0usize;\n", fp);
+    fputs("        while used < self.out.len() && self.out[used] != 0 { used += 1; }\n", fp);
+    fputs("        if used >= self.out.len() - 1 { return; }\n", fp);
+    fputs("        let bytes = text.as_bytes();\n", fp);
+    fputs("        let room = self.out.len() - 1 - used;\n", fp);
+    fputs("        let len = bytes.len().min(room);\n", fp);
+    fputs("        for (i, byte) in bytes[..len].iter().enumerate() { self.out[used + i] = *byte as i8; }\n", fp);
+    fputs("        self.out[used + len] = 0;\n", fp);
+    fputs("    }\n", fp);
+    fputs("}\n\n", fp);
+    fputs("#[macro_export]\n", fp);
+    fputs("macro_rules! repl_print {\n", fp);
+    fputs("    ($state:expr, $($arg:tt)*) => {{ $state.push_str(&format!($($arg)*)); }};\n", fp);
+    fputs("}\n\n", fp);
+    if (definitions && definitions[0] != '\0') {
+        fputs("/* persisted REPL definitions */\n", fp);
+        write_optional_block(fp, definitions);
+        fputc('\n', fp);
+    }
+    if (candidate_definition && candidate_definition[0] != '\0') {
+        fputs("/* candidate REPL definition */\n", fp);
+        write_optional_block(fp, candidate_definition);
+        fputc('\n', fp);
+    }
+    fputs("#[no_mangle]\n", fp);
+    fputs("pub unsafe extern \"C\" fn repl_entry(state: *mut ReplState) {\n", fp);
+    fputs("    let state = unsafe { &mut *state };\n", fp);
+    fputs("    state.clear_out();\n", fp);
+    if (line && line[0] != '\0') {
+        fprintf(fp, "    %s\n", line);
+    }
+    fputs("}\n", fp);
+
+    if (fclose(fp) != 0) {
+        perror(path);
+        return false;
+    }
+    return true;
+}
+
+static bool write_zig_source(const char *path, const char *definitions,
+                             const char *candidate_definition, const char *line) {
+    FILE *fp = fopen(path, "w");
+    if (!fp) {
+        perror(path);
+        return false;
+    }
+
+    fputs("const std = @import(\"std\");\n\n", fp);
+    fputs("pub const ReplState = extern struct {\n", fp);
+    fputs("    u: [16]u64,\n", fp);
+    fputs("    f: [16]f64,\n", fp);
+    fputs("    scratch: [4096]u8,\n", fp);
+    fputs("    out: [4096]u8,\n", fp);
+    fputs("    result: u64,\n", fp);
+    fputs("};\n\n", fp);
+    fputs("pub fn clearOut(state: *ReplState) void {\n", fp);
+    fputs("    state.out[0] = 0;\n", fp);
+    fputs("}\n\n", fp);
+    fputs("pub fn print(state: *ReplState, comptime fmt: []const u8, args: anytype) void {\n", fp);
+    fputs("    var used: usize = 0;\n", fp);
+    fputs("    while (used < state.out.len and state.out[used] != 0) : (used += 1) {}\n", fp);
+    fputs("    if (used >= state.out.len - 1) return;\n", fp);
+    fputs("    const written = std.fmt.bufPrint(state.out[used .. state.out.len - 1], fmt, args) catch return;\n", fp);
+    fputs("    const end = used + written.len;\n", fp);
+    fputs("    state.out[end] = 0;\n", fp);
+    fputs("}\n\n", fp);
+    if (definitions && definitions[0] != '\0') {
+        fputs("// persisted REPL definitions\n", fp);
+        write_optional_block(fp, definitions);
+        fputc('\n', fp);
+    }
+    if (candidate_definition && candidate_definition[0] != '\0') {
+        fputs("// candidate REPL definition\n", fp);
+        write_optional_block(fp, candidate_definition);
+        fputc('\n', fp);
+    }
+    fputs("export fn repl_entry(state: *ReplState) callconv(.c) void {\n", fp);
+    fputs("    clearOut(state);\n", fp);
+    if (line && line[0] != '\0') {
+        fprintf(fp, "    %s\n", line);
+    }
+    fputs("}\n", fp);
+
+    if (fclose(fp) != 0) {
+        perror(path);
+        return false;
+    }
+    return true;
+}
+
+static bool text_contains(const char *text, const char *needle) {
+    return text && needle && strstr(text, needle) != NULL;
+}
+
+static bool go_import_alias_from_line(const char *line, char *alias, size_t alias_size) {
+    const char *start = strchr(line, '"');
+    const char *end = start ? strchr(start + 1, '"') : NULL;
+    if (!start || !end || end <= start + 1) {
+        return false;
+    }
+
+    const char *path_start = start + 1;
+    const char *base = path_start;
+    for (const char *p = path_start; p < end; p++) {
+        if (*p == '/') {
+            base = p + 1;
+        }
+    }
+
+    size_t len = 0;
+    for (const char *p = base; p < end && len + 1 < alias_size; p++) {
+        if (isalnum((unsigned char)*p) || *p == '_') {
+            alias[len++] = *p;
+        } else {
+            break;
+        }
+    }
+    alias[len] = '\0';
+    return len > 0;
+}
+
+static bool go_code_uses_import_alias(const char *alias, const char *definitions,
+                                      const char *candidate_definition, const char *line) {
+    char selector[128];
+    snprintf(selector, sizeof(selector), "%s.", alias);
+    return text_contains(definitions, selector) ||
+        text_contains(candidate_definition, selector) ||
+        text_contains(line, selector);
+}
+
+static void write_go_extra_imports(FILE *fp, const char *imports, const char *definitions,
+                                   const char *candidate_definition, const char *line) {
+    if (!imports || imports[0] == '\0') {
+        return;
+    }
+
+    const char *start = imports;
+    while (*start) {
+        const char *end = strchr(start, '\n');
+        size_t len = end ? (size_t)(end - start) : strlen(start);
+        if (len > 0 && len < REPL_MAX_INPUT) {
+            char import_line[REPL_MAX_INPUT];
+            memcpy(import_line, start, len);
+            import_line[len] = '\0';
+
+            char alias[128];
+            if (go_import_alias_from_line(import_line, alias, sizeof(alias)) &&
+                go_code_uses_import_alias(alias, definitions, candidate_definition, line)) {
+                fputs(import_line, fp);
+                fputc('\n', fp);
+            }
+        }
+        if (!end) {
+            break;
+        }
+        start = end + 1;
+    }
+}
+
+static bool write_go_source(const char *path, const char *imports, const char *definitions,
+                            const char *candidate_definition, const char *line) {
+    FILE *fp = fopen(path, "w");
+    if (!fp) {
+        perror(path);
+        return false;
+    }
+
+    fputs("package main\n\n", fp);
+    fputs("import (\n", fp);
+    fputs("    \"fmt\"\n", fp);
+    fputs("    \"os\"\n", fp);
+    fputs("    \"syscall\"\n", fp);
+    fputs("    \"unsafe\"\n", fp);
+    write_go_extra_imports(fp, imports, definitions, candidate_definition, line);
+    fputs(")\n\n", fp);
+    fputs("var _ = syscall.Getpid\n\n", fp);
+    fputs("type ReplState struct {\n", fp);
+    fputs("    U [16]uint64\n", fp);
+    fputs("    F [16]float64\n", fp);
+    fputs("    Scratch [4096]byte\n", fp);
+    fputs("    Out [4096]byte\n", fp);
+    fputs("    Result uint64\n", fp);
+    fputs("}\n\n", fp);
+    fputs("func (state *ReplState) clearOut() { state.Out[0] = 0 }\n\n", fp);
+    fputs("func (state *ReplState) appendOut(text string) {\n", fp);
+    fputs("    used := 0\n", fp);
+    fputs("    for used < len(state.Out) && state.Out[used] != 0 { used++ }\n", fp);
+    fputs("    if used >= len(state.Out)-1 { return }\n", fp);
+    fputs("    n := copy(state.Out[used:len(state.Out)-1], text)\n", fp);
+    fputs("    state.Out[used+n] = 0\n", fp);
+    fputs("}\n\n", fp);
+    fputs("func Print(state *ReplState, format string, args ...any) {\n", fp);
+    fputs("    state.appendOut(fmt.Sprintf(format, args...))\n", fp);
+    fputs("}\n\n", fp);
+    fputs("func loadState(path string, state *ReplState) {\n", fp);
+    fputs("    data, err := os.ReadFile(path)\n", fp);
+    fputs("    if err != nil { panic(err) }\n", fp);
+    fputs("    size := int(unsafe.Sizeof(*state))\n", fp);
+    fputs("    if len(data) != size { panic(\"bad REPL state size\") }\n", fp);
+    fputs("    copy(unsafe.Slice((*byte)(unsafe.Pointer(state)), size), data)\n", fp);
+    fputs("}\n\n", fp);
+    fputs("func saveState(path string, state *ReplState) {\n", fp);
+    fputs("    size := int(unsafe.Sizeof(*state))\n", fp);
+    fputs("    data := unsafe.Slice((*byte)(unsafe.Pointer(state)), size)\n", fp);
+    fputs("    if err := os.WriteFile(path, data, 0600); err != nil { panic(err) }\n", fp);
+    fputs("}\n\n", fp);
+    if (definitions && definitions[0] != '\0') {
+        fputs("// persisted REPL definitions\n", fp);
+        write_optional_block(fp, definitions);
+        fputc('\n', fp);
+    }
+    if (candidate_definition && candidate_definition[0] != '\0') {
+        fputs("// candidate REPL definition\n", fp);
+        write_optional_block(fp, candidate_definition);
+        fputc('\n', fp);
+    }
+    fputs("func replEntry(state *ReplState) {\n", fp);
+    if (line && line[0] != '\0') {
+        fprintf(fp, "    %s\n", line);
+    }
+    fputs("}\n\n", fp);
+    fputs("func main() {\n", fp);
+    fputs("    if len(os.Args) != 2 { panic(\"missing REPL state path\") }\n", fp);
+    fputs("    var state ReplState\n", fp);
+    fputs("    loadState(os.Args[1], &state)\n", fp);
+    fputs("    state.clearOut()\n", fp);
+    fputs("    replEntry(&state)\n", fp);
+    fputs("    saveState(os.Args[1], &state)\n", fp);
+    fputs("}\n", fp);
+
+    if (fclose(fp) != 0) {
+        perror(path);
+        return false;
+    }
+    return true;
+}
+
+static bool write_statement_source(const char *path, repl_mode_t mode, const char *imports,
+                                   const char *definitions, const char *line) {
+    if (mode == MODE_RUST) {
+        return write_rust_source(path, definitions, NULL, line);
+    }
+    if (mode == MODE_ZIG) {
+        return write_zig_source(path, definitions, NULL, line);
+    }
+    if (mode == MODE_GO) {
+        return write_go_source(path, imports, definitions, NULL, line);
+    }
+
     FILE *fp = fopen(path, "w");
     if (!fp) {
         perror(path);
@@ -1245,7 +1622,18 @@ static bool write_statement_source(const char *path, repl_mode_t mode, const cha
 }
 
 static bool write_definition_probe_source(const char *path, repl_mode_t mode,
-                                          const char *definitions, const char *candidate) {
+                                          const char *imports, const char *definitions,
+                                          const char *candidate) {
+    if (mode == MODE_RUST) {
+        return write_rust_source(path, definitions, candidate, NULL);
+    }
+    if (mode == MODE_ZIG) {
+        return write_zig_source(path, definitions, candidate, NULL);
+    }
+    if (mode == MODE_GO) {
+        return write_go_source(path, imports, definitions, candidate, NULL);
+    }
+
     FILE *fp = fopen(path, "w");
     if (!fp) {
         perror(path);
@@ -1422,6 +1810,37 @@ static bool compile_shared(repl_mode_t mode, const char *source_path, const char
 #endif
     }
 
+    if (mode == MODE_RUST) {
+        char *const argv[] = {
+            "rustc", "--edition=2021", "--crate-type", "cdylib", "--crate-name", "repl_snippet",
+            (char *)source_path, "-o", (char *)library_path, NULL,
+        };
+        int status = run_command_with_stdio(argv, quiet);
+        if (status != 0) {
+            if (!quiet) {
+                fprintf(stderr, "rust compilation failed with exit code %d\n", status);
+            }
+            return false;
+        }
+        return true;
+    }
+
+    if (mode == MODE_ZIG) {
+        char emit_arg[REPL_MAX_INPUT + 16];
+        snprintf(emit_arg, sizeof(emit_arg), "-femit-bin=%s", library_path);
+        char *const argv[] = {
+            "zig", "build-lib", "-dynamic", "-O", "Debug", emit_arg, (char *)source_path, NULL,
+        };
+        int status = run_command_with_stdio(argv, quiet);
+        if (status != 0) {
+            if (!quiet) {
+                fprintf(stderr, "zig compilation failed with exit code %d\n", status);
+            }
+            return false;
+        }
+        return true;
+    }
+
     if (mode == MODE_LLVMIR) {
         int status = 0;
         if (llvm_opaque_pointer_flag_supported()) {
@@ -1470,20 +1889,102 @@ static bool load_and_run(const char *library_path, repl_state_t *state) {
     return true;
 }
 
-static bool build_and_run_statement(repl_mode_t mode, const char *definitions, const char *line,
+static bool write_state_file(const char *path, const repl_state_t *state) {
+    FILE *fp = fopen(path, "wb");
+    if (!fp) {
+        perror(path);
+        return false;
+    }
+    bool ok = fwrite(state, 1, sizeof(*state), fp) == sizeof(*state);
+    if (fclose(fp) != 0) {
+        perror(path);
+        return false;
+    }
+    if (!ok) {
+        fprintf(stderr, "failed to write REPL state to %s\n", path);
+    }
+    return ok;
+}
+
+static bool read_state_file(const char *path, repl_state_t *state) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        perror(path);
+        return false;
+    }
+    bool ok = fread(state, 1, sizeof(*state), fp) == sizeof(*state);
+    if (fclose(fp) != 0) {
+        perror(path);
+        return false;
+    }
+    if (!ok) {
+        fprintf(stderr, "failed to read REPL state from %s\n", path);
+    }
+    return ok;
+}
+
+static bool compile_go_executable(const char *source_path, const char *executable_path, bool quiet) {
+    char *const argv[] = {
+        "go", "build", "-o", (char *)executable_path, (char *)source_path, NULL,
+    };
+    int status = run_command_with_stdio(argv, quiet);
+    if (status != 0) {
+        if (!quiet) {
+            fprintf(stderr, "go build failed with exit code %d\n", status);
+        }
+        return false;
+    }
+    return true;
+}
+
+static bool run_go_executable(const char *executable_path, const char *state_path, bool quiet) {
+    char *const argv[] = {
+        (char *)executable_path, (char *)state_path, NULL,
+    };
+    int status = run_command_with_stdio(argv, quiet);
+    if (status != 0) {
+        if (!quiet) {
+            fprintf(stderr, "go snippet failed with exit code %d\n", status);
+        }
+        return false;
+    }
+    return true;
+}
+
+static bool build_and_run_statement(repl_mode_t mode, const char *imports,
+                                    const char *definitions, const char *line,
                                     unsigned long serial, repl_state_t *state,
                                     char *last_source, size_t last_source_size) {
     char source_path[256];
     char library_path[256];
     snprintf(source_path, sizeof(source_path), BUILD_DIR "/%s-%ld-%lu%s",
              mode_name(mode), (long)getpid(), serial, mode_extension(mode));
-    snprintf(library_path, sizeof(library_path), BUILD_DIR "/%s-%ld-%lu%s",
-             mode_name(mode), (long)getpid(), serial, SHARED_EXT);
+    if (mode == MODE_GO) {
+        snprintf(library_path, sizeof(library_path), BUILD_DIR "/go-%ld-%lu", (long)getpid(), serial);
+    } else {
+        snprintf(library_path, sizeof(library_path), BUILD_DIR "/%s-%ld-%lu%s",
+                 mode_name(mode), (long)getpid(), serial, SHARED_EXT);
+    }
 
-    if (!write_statement_source(source_path, mode, definitions, line)) {
+    if (!write_statement_source(source_path, mode, imports, definitions, line)) {
         return false;
     }
     snprintf(last_source, last_source_size, "%s", source_path);
+
+    if (mode == MODE_GO) {
+        char state_path[256];
+        snprintf(state_path, sizeof(state_path), BUILD_DIR "/go-state-%ld-%lu.bin", (long)getpid(), serial);
+        if (!compile_go_executable(source_path, library_path, false)) {
+            return false;
+        }
+        if (!write_state_file(state_path, state)) {
+            return false;
+        }
+        if (!run_go_executable(library_path, state_path, false)) {
+            return false;
+        }
+        return read_state_file(state_path, state);
+    }
 
     if (!compile_shared(mode, source_path, library_path, false)) {
         return false;
@@ -1492,32 +1993,46 @@ static bool build_and_run_statement(repl_mode_t mode, const char *definitions, c
     return load_and_run(library_path, state);
 }
 
-static bool probe_statement_compile(repl_mode_t mode, const char *definitions,
+static bool probe_statement_compile(repl_mode_t mode, const char *imports, const char *definitions,
                                     const char *line, unsigned long serial) {
     char source_path[256];
     char library_path[256];
     snprintf(source_path, sizeof(source_path), BUILD_DIR "/probe-stmt-%s-%ld-%lu%s",
              mode_name(mode), (long)getpid(), serial, mode_extension(mode));
-    snprintf(library_path, sizeof(library_path), BUILD_DIR "/probe-stmt-%s-%ld-%lu%s",
-             mode_name(mode), (long)getpid(), serial, SHARED_EXT);
+    if (mode == MODE_GO) {
+        snprintf(library_path, sizeof(library_path), BUILD_DIR "/probe-stmt-go-%ld-%lu", (long)getpid(), serial);
+    } else {
+        snprintf(library_path, sizeof(library_path), BUILD_DIR "/probe-stmt-%s-%ld-%lu%s",
+                 mode_name(mode), (long)getpid(), serial, SHARED_EXT);
+    }
 
-    if (!write_statement_source(source_path, mode, definitions, line)) {
+    if (!write_statement_source(source_path, mode, imports, definitions, line)) {
         return false;
+    }
+    if (mode == MODE_GO) {
+        return compile_go_executable(source_path, library_path, true);
     }
     return compile_shared(mode, source_path, library_path, true);
 }
 
-static bool probe_definition_compile(repl_mode_t mode, const char *definitions,
+static bool probe_definition_compile(repl_mode_t mode, const char *imports, const char *definitions,
                                      const char *candidate, unsigned long serial) {
     char source_path[256];
     char library_path[256];
     snprintf(source_path, sizeof(source_path), BUILD_DIR "/probe-def-%s-%ld-%lu%s",
              mode_name(mode), (long)getpid(), serial, mode_extension(mode));
-    snprintf(library_path, sizeof(library_path), BUILD_DIR "/probe-def-%s-%ld-%lu%s",
-             mode_name(mode), (long)getpid(), serial, SHARED_EXT);
+    if (mode == MODE_GO) {
+        snprintf(library_path, sizeof(library_path), BUILD_DIR "/probe-def-go-%ld-%lu", (long)getpid(), serial);
+    } else {
+        snprintf(library_path, sizeof(library_path), BUILD_DIR "/probe-def-%s-%ld-%lu%s",
+                 mode_name(mode), (long)getpid(), serial, SHARED_EXT);
+    }
 
-    if (!write_definition_probe_source(source_path, mode, definitions, candidate)) {
+    if (!write_definition_probe_source(source_path, mode, imports, definitions, candidate)) {
         return false;
+    }
+    if (mode == MODE_GO) {
+        return compile_go_executable(source_path, library_path, true);
     }
     return compile_shared(mode, source_path, library_path, true);
 }
@@ -1532,7 +2047,8 @@ static void commit_definition_text(text_buffer_t *definitions, const char *text)
     }
 }
 
-static bool finish_pending_statement(repl_mode_t mode, text_buffer_t *definitions,
+static bool finish_pending_statement(repl_mode_t mode, text_buffer_t *imports,
+                                     text_buffer_t *definitions,
                                      text_buffer_t *pending, unsigned long *serial,
                                      repl_state_t *state, char *last_source,
                                      size_t last_source_size, bool force_diagnostics) {
@@ -1540,15 +2056,15 @@ static bool finish_pending_statement(repl_mode_t mode, text_buffer_t *definition
         return true;
     }
 
-    if (probe_definition_compile(mode, definitions->data, pending->data, *serial)) {
+    if (probe_definition_compile(mode, imports->data, definitions->data, pending->data, *serial)) {
         commit_definition_text(definitions, pending->data);
         text_buffer_clear(pending);
         puts("definition block committed");
         return true;
     }
 
-    if (probe_statement_compile(mode, definitions->data, pending->data, *serial)) {
-        if (build_and_run_statement(mode, definitions->data, pending->data, (*serial)++,
+    if (probe_statement_compile(mode, imports->data, definitions->data, pending->data, *serial)) {
+        if (build_and_run_statement(mode, imports->data, definitions->data, pending->data, (*serial)++,
                                     state, last_source, last_source_size)) {
             print_state(state);
         }
@@ -1557,7 +2073,7 @@ static bool finish_pending_statement(repl_mode_t mode, text_buffer_t *definition
     }
 
     if (force_diagnostics) {
-        (void)build_and_run_statement(mode, definitions->data, pending->data, (*serial)++,
+        (void)build_and_run_statement(mode, imports->data, definitions->data, pending->data, (*serial)++,
                                       state, last_source, last_source_size);
         text_buffer_clear(pending);
         return true;
@@ -1599,6 +2115,9 @@ static repl_mode_t parse_mode(int argc, char **argv) {
             if (strcmp(argv[i + 1], "cpp") == 0) return MODE_CPP;
             if (strcmp(argv[i + 1], "objc") == 0) return MODE_OBJC;
             if (strcmp(argv[i + 1], "llvmir") == 0 || strcmp(argv[i + 1], "ir") == 0) return MODE_LLVMIR;
+            if (strcmp(argv[i + 1], "rust") == 0) return MODE_RUST;
+            if (strcmp(argv[i + 1], "zig") == 0) return MODE_ZIG;
+            if (strcmp(argv[i + 1], "go") == 0) return MODE_GO;
         }
     }
     return MODE_C;
@@ -1620,10 +2139,12 @@ int main(int argc, char **argv) {
     reset_state(&state);
 
     text_buffer_t definitions;
+    text_buffer_t imports;
     text_buffer_t block;
     text_buffer_t pending_statement;
     text_buffer_t ir_body;
     text_buffer_init(&definitions);
+    text_buffer_init(&imports);
     text_buffer_init(&block);
     text_buffer_init(&pending_statement);
     text_buffer_init(&ir_body);
@@ -1664,7 +2185,7 @@ int main(int argc, char **argv) {
             } else if (stripped_comment && mode_is_statement_repl(mode) && pending_statement.len > 0) {
                 continue;
             } else if (mode_is_statement_repl(mode) && pending_statement.len > 0) {
-                finish_pending_statement(mode, &definitions, &pending_statement, &serial,
+                finish_pending_statement(mode, &imports, &definitions, &pending_statement, &serial,
                                          &state, last_source, sizeof(last_source), true);
             }
             continue;
@@ -1703,6 +2224,38 @@ int main(int argc, char **argv) {
             continue;
         }
 
+        if (strncmp(line, ":import", 7) == 0 && (line[7] == '\0' || isspace((unsigned char)line[7]))) {
+            if (mode != MODE_GO) {
+                puts(":import is only used by go-repl");
+                continue;
+            }
+            char *pkg = trim(line + 7);
+            if (*pkg == '"' || *pkg == '`') {
+                char quote = *pkg++;
+                char *end = strrchr(pkg, quote);
+                if (end) {
+                    *end = '\0';
+                }
+            }
+            if (*pkg == '\0') {
+                puts("usage: :import <package-path>");
+                continue;
+            }
+            if (strchr(pkg, '"') || strchr(pkg, '\\')) {
+                puts("invalid Go import path");
+                continue;
+            }
+            char import_line[REPL_MAX_INPUT];
+            snprintf(import_line, sizeof(import_line), "    \"%s\"\n", pkg);
+            if (!strstr(imports.data, import_line)) {
+                text_buffer_append(&imports, import_line);
+                puts("import persisted");
+            } else {
+                puts("import already persisted");
+            }
+            continue;
+        }
+
         if (strcmp(line, ":reset") == 0) {
             reset_state(&state);
             puts("state reset");
@@ -1721,9 +2274,13 @@ int main(int argc, char **argv) {
         }
 
         if (strcmp(line, ":defs") == 0) {
-            if (definitions.len == 0 && block.len == 0 && pending_statement.len == 0) {
+            if (definitions.len == 0 && imports.len == 0 && block.len == 0 && pending_statement.len == 0) {
                 puts("(no definitions)");
             } else {
+                if (imports.len > 0) {
+                    fputs("imports:\n", stdout);
+                    fputs(imports.data, stdout);
+                }
                 if (definitions.len > 0) {
                     fputs(definitions.data, stdout);
                 }
@@ -1753,11 +2310,18 @@ int main(int argc, char **argv) {
 
         if (strcmp(line, ":clear") == 0) {
             text_buffer_clear(&definitions);
+            text_buffer_clear(&imports);
             text_buffer_clear(&block);
             text_buffer_clear(&pending_statement);
             text_buffer_clear(&ir_body);
             in_def_block = false;
-            puts("definitions and LLVM IR body cleared");
+            if (mode == MODE_LLVMIR) {
+                puts("definitions and LLVM IR body cleared");
+            } else if (mode == MODE_GO) {
+                puts("imports and definitions cleared");
+            } else {
+                puts("definitions cleared");
+            }
             continue;
         }
 
@@ -1797,7 +2361,7 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        if (starts_with_preprocessor_directive(code_line) && mode_is_statement_repl(mode) &&
+        if (starts_with_preprocessor_directive(code_line) && mode_uses_preprocessor_directives(mode) &&
             pending_statement.len == 0) {
             text_buffer_append_line(&definitions, code_line);
             puts("directive persisted");
@@ -1806,7 +2370,7 @@ int main(int argc, char **argv) {
 
         if (mode_is_statement_repl(mode)) {
             text_buffer_append_line(&pending_statement, code_line);
-            finish_pending_statement(mode, &definitions, &pending_statement, &serial,
+            finish_pending_statement(mode, &imports, &definitions, &pending_statement, &serial,
                                      &state, last_source, sizeof(last_source), false);
         } else if (mode == MODE_LLVMIR) {
             text_buffer_append_line(&ir_body, code_line);
@@ -1824,6 +2388,7 @@ int main(int argc, char **argv) {
     }
 
     text_buffer_free(&definitions);
+    text_buffer_free(&imports);
     text_buffer_free(&block);
     text_buffer_free(&pending_statement);
     text_buffer_free(&ir_body);
