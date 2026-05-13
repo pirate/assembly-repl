@@ -411,8 +411,8 @@ function printHelp() {
     console.log('  :reset             reset persistent REPL state');
     console.log('  :scratch           print scratch memory size and first bytes');
     console.log('  :defs              print the current instruction block');
-    console.log('  :def               start a multi-line instruction block');
-    console.log('  :end               commit the current instruction block');
+    console.log('  :def               start an optional multi-line instruction block');
+    console.log('  :end               commit the optional instruction block');
     console.log('  :body              print accumulated WebAssembly instructions');
     console.log('  :clear             clear the accumulated WebAssembly body');
     console.log('  :source            print the last generated .wat file path');
@@ -429,6 +429,7 @@ function printHelp() {
     console.log('Execution model:');
     console.log('  Each accepted line is appended to one generated WebAssembly function body.');
     console.log('  The whole body is compiled and executed after each accepted line.');
+    console.log('  :def ... :end is only needed when you want to batch instructions before running them.');
     console.log('  Input uses flat instruction form, for example: i64.const 40');
     console.log('  The top remaining i32/i64 stack value updates $result; f32/f64 updates $f0.');
     console.log('  Persistent globals: $result, $u0..$u15, $f0..$f15.');

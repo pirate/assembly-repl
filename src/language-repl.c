@@ -496,8 +496,8 @@ static const topic_help_t c_topics[] = {
 
 static const topic_help_t cpp_topics[] = {
     {"state", "slot slots", "Persistent REPL state shared by every compiled snippet.", "state->result\nstate->u64[n]\nstate->f64[n]\nstate->scratch[n]", "state->result = 42;\nU(0) += 1;\nF(0) = 3.14;", "The C helper macros are available in C++ too."},
-    {"print", "printf out", "Append formatted text to the REPL output buffer.", "print(\"format\", ...)", "print(\"u0=%llu\\n\", (unsigned long long)U(0));", "For iostream experiments, include the header in a :def block and write to state explicitly."},
-    {"include", "using header", "Persist includes and using declarations for future snippets.", "#include <vector>\nusing std::vector;", "#include <vector>\n:defs", "Lines beginning with # are persisted immediately. Other top-level declarations belong in :def blocks."},
+    {"print", "printf out", "Append formatted text to the REPL output buffer.", "print(\"format\", ...)", "print(\"u0=%llu\\n\", (unsigned long long)U(0));", "For iostream experiments, include the header first and write to state explicitly."},
+    {"include", "using header", "Persist includes and using declarations for future snippets.", "#include <vector>\nusing std::vector;", "#include <vector>\n:defs", "Lines beginning with # are persisted immediately. Other top-level declarations are detected and persisted automatically."},
     {"function", "lambda def", "Persist helper functions or run local lambdas.", "auto helper_name(args) -> type { ... }", "auto sq = [](uint64_t x) { return x * x; };\nstate->result = sq(12);", "A lambda typed at the prompt is local to that one execution."},
     {"class", "struct", "Persist C++ classes and structs.", "struct Point {\n    int x;\n    int y;\n};", "struct Counter {\n    uint64_t n = 0;\n    void inc() { n++; }\n};", "Multi-line input is collected until the compiler accepts it."},
     {"template", NULL, "Persist function or class templates.", "template <class T>\nT twice(T x) {\n    return x + x;\n}", "state->result = twice<uint64_t>(21);", "Templates are compiled each time a new snippet is built."},
@@ -520,14 +520,14 @@ static const topic_help_t ir_topics[] = {
     {"getelementptr", "gep", "Compute an address inside an aggregate without loading memory.", "%p = getelementptr type, ptr %base, indices...", "%result = getelementptr %repl_state, ptr %state, i32 0, i32 4", "The state struct type is already declared as %repl_state."},
     {"icmp", "fcmp", "Compare values and produce an i1.", "%c = icmp eq i64 %a, %b", "%c = icmp ult i64 %v, 10", "Pair with select or br."},
     {"br", "phi", "Branch to labels and join values with phi.", "br label %name\nbr i1 %cond, label %yes, label %no\nname:", "br label %done\ndone:", "A terminator ends the current basic block; malformed control flow will be rejected by LLVM."},
-    {"call", "declare", "Call a declared function.", "%x = call i64 @fn(i64 %arg)", ":def\ndeclare i32 @puts(ptr)\n:end", "External calls from a shared library depend on platform dynamic linking behavior."},
+    {"call", "declare", "Call a declared function.", "%x = call i64 @fn(i64 %arg)", "declare i32 @puts(ptr)\n%x = call i32 @puts(ptr %p)", "External calls from a shared library depend on platform dynamic linking behavior."},
     {"ret", NULL, "Return from the generated entry function.", "ret void", "ret void", "If you type ret void, later appended instructions will be unreachable or invalid until :clear."},
 };
 
 static const topic_help_t rust_topics[] = {
     {"state", "slot slots", "Persistent REPL state shared by every compiled snippet.", "state.result\nstate.u64[n]\nstate.f64[n]\nstate.scratch[n]", "state.result = 42;\nstate.u64[0] += 1;\nstate.scratch[0] = 0xaa;", "Snippets run inside unsafe extern \"C\" fn repl_entry(state: *mut ReplState)."},
     {"print", "out", "Append formatted text to the REPL output buffer.", "repl_print!(state, \"format\", args...)", "repl_print!(state, \"answer={}\\n\", state.u64[0]);", "This writes into state.out, then the host prints it after the snippet returns."},
-    {"use", "import", "Persist a Rust use declaration.", "use std::time::SystemTime;", "use std::time::SystemTime;\n:defs", "Use declarations belong in normal input or :def blocks and are persisted as definitions."},
+    {"use", "import", "Persist a Rust use declaration.", "use std::time::SystemTime;", "use std::time::SystemTime;\n:defs", "Use declarations can be pasted directly and are persisted automatically."},
     {"function", "fn def", "Persist helper functions, structs, and constants.", "fn square(x: u64) -> u64 {\n    x * x\n}", "fn twice(x: u64) -> u64 { x * 2 }\nstate.result = twice(21);", "Multi-line input is collected until rustc accepts it."},
     {"unsafe", "extern syscall", "Call unsafe or external functions from a snippet.", "unsafe { ... }", "unsafe extern \"C\" { fn getpid() -> i32; }\nstate.result = unsafe { getpid() as u64 };", "Unsafe Rust is still unsafe; crashes and invalid memory writes are not sandboxed."},
 };
@@ -1188,8 +1188,8 @@ static void print_help(repl_mode_t mode) {
     if (mode == MODE_GO) {
         puts("  :import <package>  persist an extra Go import path");
     }
-    puts("  :def               start a persisted definition block");
-    puts("  :end               commit the current definition block");
+    puts("  :def               start an explicit persisted definition block");
+    puts("  :end               commit the explicit definition block");
     if (mode == MODE_LLVMIR) {
         puts("  :clear             clear definitions and LLVM IR body");
     } else if (mode == MODE_GO) {
@@ -1218,7 +1218,8 @@ static void print_help(repl_mode_t mode) {
         puts("Execution model:");
         puts("  Normal input is compiled inside func replEntry(state *ReplState).");
         puts("  Multi-line input continues until go build accepts it.");
-        puts("  Accepted top-level definitions are persisted; accepted statements run.");
+        puts("  Top-level definitions can be pasted directly and are persisted automatically.");
+        puts("  Accepted statements run.");
         puts("  Go snippets run in a child process with serialized persistent state.");
         puts("  Persistent helpers: state.U[n], state.F[n], state.Scratch[n], state.Result, Print(...).");
     } else if (mode_is_statement_repl(mode)) {
@@ -1232,11 +1233,12 @@ static void print_help(repl_mode_t mode) {
         }
         puts("  Multi-line input continues until the compiler accepts it.");
         puts("  Press Enter on an empty continuation line to force diagnostics.");
-        puts("  Accepted top-level definitions are persisted; accepted statements run.");
+        puts("  Top-level definitions can be pasted directly and are persisted automatically.");
+        puts("  Accepted statements run.");
         if (mode_uses_preprocessor_directives(mode)) {
             puts("  Lines beginning with # are persisted as preprocessor directives.");
         }
-        puts("  :def ... :end is still available when you want explicit definition mode.");
+        puts("  :def ... :end is only needed when you want to force definition mode.");
         if (mode == MODE_RUST) {
             puts("  Persistent helpers: state.u64[n], state.f64[n], state.scratch[n], state.result, repl_print!(...).");
         } else if (mode == MODE_ZIG) {
@@ -1248,6 +1250,7 @@ static void print_help(repl_mode_t mode) {
         puts("Execution model:");
         puts("  Each non-command line is appended to the current LLVM IR function body.");
         puts("  The whole body is recompiled and executed after each appended line.");
+        puts("  Top-level declare, define, global, type, target, and metadata lines are persisted automatically.");
         puts("  The entry block receives ptr %state, whose type is %repl_state.");
     }
     puts("");
@@ -2047,6 +2050,56 @@ static void commit_definition_text(text_buffer_t *definitions, const char *text)
     }
 }
 
+static bool starts_with_word(const char *line, const char *word) {
+    size_t len = strlen(word);
+    return strncmp(line, word, len) == 0 &&
+        (line[len] == '\0' || isspace((unsigned char)line[len]));
+}
+
+static bool llvm_starts_toplevel_block(const char *line) {
+    return starts_with_word(line, "define");
+}
+
+static bool llvm_is_single_line_toplevel(const char *line) {
+    if (starts_with_word(line, "declare") ||
+        starts_with_word(line, "target") ||
+        starts_with_word(line, "attributes") ||
+        strncmp(line, "source_filename", 15) == 0) {
+        return true;
+    }
+    if (line[0] == '@' || line[0] == '!') {
+        return true;
+    }
+    return line[0] == '%' && strstr(line, " = type") != NULL;
+}
+
+static bool llvm_toplevel_block_complete(const char *text) {
+    int depth = 0;
+    bool saw_open = false;
+    bool in_comment = false;
+
+    for (const char *p = text; *p; p++) {
+        if (in_comment) {
+            if (*p == '\n') {
+                in_comment = false;
+            }
+            continue;
+        }
+        if (*p == ';') {
+            in_comment = true;
+            continue;
+        }
+        if (*p == '{') {
+            depth++;
+            saw_open = true;
+        } else if (*p == '}') {
+            depth--;
+        }
+    }
+
+    return saw_open && depth <= 0;
+}
+
 static bool finish_pending_statement(repl_mode_t mode, text_buffer_t *imports,
                                      text_buffer_t *definitions,
                                      text_buffer_t *pending, unsigned long *serial,
@@ -2149,6 +2202,7 @@ int main(int argc, char **argv) {
     text_buffer_init(&pending_statement);
     text_buffer_init(&ir_body);
     bool in_def_block = false;
+    bool in_auto_def_block = false;
 
     char last_source[256] = "";
     unsigned long serial = 1;
@@ -2159,7 +2213,7 @@ int main(int argc, char **argv) {
     char input[REPL_MAX_INPUT];
     for (;;) {
         bool in_multiline_statement = mode_is_statement_repl(mode) && pending_statement.len > 0;
-        printf("%s%c ", mode_name(mode), (in_def_block || in_multiline_statement) ? '|' : '>');
+        printf("%s%c ", mode_name(mode), (in_def_block || in_auto_def_block || in_multiline_statement) ? '|' : '>');
         fflush(stdout);
 
         if (!fgets(input, sizeof(input), stdin)) {
@@ -2180,7 +2234,7 @@ int main(int argc, char **argv) {
 
         char *line = trim(code_line);
         if (*line == '\0') {
-            if (in_def_block) {
+            if (in_def_block || in_auto_def_block) {
                 text_buffer_append_line(&block, "");
             } else if (stripped_comment && mode_is_statement_repl(mode) && pending_statement.len > 0) {
                 continue;
@@ -2315,6 +2369,7 @@ int main(int argc, char **argv) {
             text_buffer_clear(&pending_statement);
             text_buffer_clear(&ir_body);
             in_def_block = false;
+            in_auto_def_block = false;
             if (mode == MODE_LLVMIR) {
                 puts("definitions and LLVM IR body cleared");
             } else if (mode == MODE_GO) {
@@ -2328,6 +2383,7 @@ int main(int argc, char **argv) {
         if (strcmp(line, ":def") == 0) {
             text_buffer_clear(&block);
             in_def_block = true;
+            in_auto_def_block = false;
             puts("definition block started; finish with :end");
             continue;
         }
@@ -2346,6 +2402,7 @@ int main(int argc, char **argv) {
             }
             text_buffer_clear(&block);
             in_def_block = false;
+            in_auto_def_block = false;
             puts("definition block committed");
             continue;
         }
@@ -2358,6 +2415,36 @@ int main(int argc, char **argv) {
 
         if (in_def_block) {
             text_buffer_append_line(&block, code_line);
+            continue;
+        }
+
+        if (in_auto_def_block) {
+            text_buffer_append_line(&block, code_line);
+            if (mode == MODE_LLVMIR && llvm_toplevel_block_complete(block.data)) {
+                commit_definition_text(&definitions, block.data);
+                text_buffer_clear(&block);
+                in_auto_def_block = false;
+                puts("definition block committed");
+            }
+            continue;
+        }
+
+        if (mode == MODE_LLVMIR && llvm_starts_toplevel_block(line)) {
+            text_buffer_clear(&block);
+            text_buffer_append_line(&block, code_line);
+            if (llvm_toplevel_block_complete(block.data)) {
+                commit_definition_text(&definitions, block.data);
+                text_buffer_clear(&block);
+                puts("definition block committed");
+            } else {
+                in_auto_def_block = true;
+            }
+            continue;
+        }
+
+        if (mode == MODE_LLVMIR && llvm_is_single_line_toplevel(line)) {
+            commit_definition_text(&definitions, code_line);
+            puts("definition block committed");
             continue;
         }
 

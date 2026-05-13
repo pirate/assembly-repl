@@ -107,6 +107,10 @@ zig> extern?              // Show help for Zig external calls.
 go> syscall?              // Show help for Go syscall examples.
 ```
 
+For C, C++, Objective-C, LLVM IR, Rust, Zig, and Go, top-level definitions can
+be pasted directly. `:def ... :end` is only an explicit fallback when you want to
+force definition mode.
+
 ## `assembly-repl`
 
 - Assembles each executable input with `clang`
@@ -899,9 +903,7 @@ This calls the platform C library's `getpid` entry point, avoiding OS-specific r
 syscall numbers in the IR:
 
 ```text
-ir> :def                                                       ; Start a persisted declaration block.
-ir| declare i32 @getpid()                                      ; Declare the C library getpid function.
-ir| :end                                                       ; Commit the declaration block.
+ir> declare i32 @getpid()                                      ; Declare the C library getpid function.
 definition block committed
 ir> %pid32 = call i32 @getpid()                                ; Call getpid and receive an i32 pid.
 ir> %pid = zext i32 %pid32 to i64                              ; Widen the pid to i64.
@@ -917,13 +919,11 @@ The exact process id will be different on your machine.
 <details><summary><h4><code>llvmir-repl</code>: Defining a Reusable Function</h4></summary>
 
 ```text
-ir> :def                                                       ; Start a persisted function block.
-ir| define i64 @twice(i64 %x) {                                ; Define twice(x).
+ir> define i64 @twice(i64 %x) {                                ; Define twice(x).
 ir| entry:                                                     ; Start the function entry block.
 ir|   %r = mul i64 %x, 2                                       ; Multiply the argument by 2.
 ir|   ret i64 %r                                               ; Return the doubled value.
 ir| }                                                          ; End the function definition.
-ir| :end                                                       ; Commit the function block.
 definition block committed
 ir> %v = call i64 @twice(i64 21)                               ; Call twice(21).
 ir> %result = getelementptr %repl_state, ptr %state, i32 0, i32 4 ; Point at state->result.
@@ -942,18 +942,17 @@ This computes:
 ```
 
 ```text
-ir> :def                                                       ; Start a persisted function block.
-ir| define i64 @calc_add(i64 %a, i64 %b) {                     ; Define calc_add(a, b).
+ir> define i64 @calc_add(i64 %a, i64 %b) {                     ; Define calc_add(a, b).
 ir| entry:                                                     ; Start calc_add's entry block.
 ir|   %r = add i64 %a, %b                                      ; Add the two arguments.
 ir|   ret i64 %r                                               ; Return the sum.
 ir| }                                                          ; End calc_add.
-ir| define i64 @calc_mul(i64 %a, i64 %b) {                     ; Define calc_mul(a, b).
+definition block committed
+ir> define i64 @calc_mul(i64 %a, i64 %b) {                     ; Define calc_mul(a, b).
 ir| entry:                                                     ; Start calc_mul's entry block.
 ir|   %r = mul i64 %a, %b                                      ; Multiply the two arguments.
 ir|   ret i64 %r                                               ; Return the product.
 ir| }                                                          ; End calc_mul.
-ir| :end                                                       ; Commit both functions.
 definition block committed
 ir> %sum = call i64 @calc_add(i64 7, i64 35)                   ; Compute 7 + 35.
 ir> %product = call i64 @calc_mul(i64 %sum, i64 2)             ; Multiply the sum by 2.
@@ -985,11 +984,15 @@ Commands:
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
 - `:defs` prints persisted definitions
-- `:def` starts a persisted definition block
-- `:end` commits the current definition block
+- `:def` starts an explicit persisted definition block
+- `:end` commits the explicit definition block
 - `:clear` clears definitions and LLVM IR body
 - `:source` prints the last generated IR file path
 - `:quit` exits
+
+Top-level declarations and definitions are persisted automatically. Body
+instructions are appended to `repl_entry` and recompiled after each accepted
+line.
 
 ## `c-repl`
 
@@ -1107,15 +1110,15 @@ Commands:
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
 - `:defs` prints persisted definitions
-- `:def` starts a persisted definition block
-- `:end` commits the current definition block
+- `:def` starts an explicit persisted definition block
+- `:end` commits the explicit definition block
 - `:clear` clears definitions
 - `:source` prints the last generated source file path
 - `:quit` exits
 
-Multi-line input is collected until the compiler accepts it. Accepted top-level
-definitions are persisted; accepted statements run inside `repl_entry`. Press
-Enter on an empty continuation line to force diagnostics.
+Multi-line input is collected until the compiler accepts it. Top-level
+definitions are persisted automatically; accepted statements run inside
+`repl_entry`. Press Enter on an empty continuation line to force diagnostics.
 
 ## `cpp-repl`
 
@@ -1232,15 +1235,15 @@ Commands:
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
 - `:defs` prints persisted definitions
-- `:def` starts a persisted definition block
-- `:end` commits the current definition block
+- `:def` starts an explicit persisted definition block
+- `:end` commits the explicit definition block
 - `:clear` clears definitions
 - `:source` prints the last generated source file path
 - `:quit` exits
 
-Multi-line input is collected until the compiler accepts it. Accepted top-level
-definitions are persisted; accepted statements run inside `repl_entry`. Press
-Enter on an empty continuation line to force diagnostics.
+Multi-line input is collected until the compiler accepts it. Top-level
+definitions are persisted automatically; accepted statements run inside
+`repl_entry`. Press Enter on an empty continuation line to force diagnostics.
 
 ## `objc-repl`
 
@@ -1364,15 +1367,15 @@ Commands:
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
 - `:defs` prints persisted definitions
-- `:def` starts a persisted definition block
-- `:end` commits the current definition block
+- `:def` starts an explicit persisted definition block
+- `:end` commits the explicit definition block
 - `:clear` clears definitions
 - `:source` prints the last generated source file path
 - `:quit` exits
 
-Multi-line input is collected until the compiler accepts it. Accepted top-level
-definitions are persisted; accepted statements run inside `repl_entry`. Press
-Enter on an empty continuation line to force diagnostics.
+Multi-line input is collected until the compiler accepts it. Top-level
+definitions are persisted automatically; accepted statements run inside
+`repl_entry`. Press Enter on an empty continuation line to force diagnostics.
 
 ## `wasm-repl`
 
@@ -1445,17 +1448,11 @@ This computes:
 ```
 
 ```text
-wasm> :clear
-definitions and WebAssembly body cleared
-wasm> :def
-instruction block started; finish with :end
-wasm| i64.const 7
-wasm| i64.const 35
-wasm| i64.add
-wasm| i64.const 2
-wasm| i64.mul
-wasm| :end
-instruction block committed
+wasm> i64.const 7
+wasm> i64.const 35
+wasm> i64.add
+wasm> i64.const 2
+wasm> i64.mul
 result 0x0000000000000054 (84)
 ```
 
@@ -1464,28 +1461,16 @@ result 0x0000000000000054 (84)
 <details><summary><h4><code>wasm-repl</code>: Host Call Timer</h4></summary>
 
 `$host_time_ms` is an imported host function that returns the host wall clock as
-Unix milliseconds. This stores one timestamp in `$u0`, then clears the body and
-computes elapsed time with a second host call:
+Unix milliseconds. This stores one timestamp in `$u0`, then computes elapsed
+time with a second host call:
 
 ```text
-wasm> :clear
-definitions and WebAssembly body cleared
-wasm> :def
-instruction block started; finish with :end
-wasm| call $host_time_ms
-wasm| global.set $u0
-wasm| :end
-instruction block committed
+wasm> call $host_time_ms
+wasm> global.set $u0
 u0  0x0000019ad5f1d2a0
-wasm> :clear
-definitions and WebAssembly body cleared
-wasm> :def
-instruction block started; finish with :end
-wasm| call $host_time_ms
-wasm| global.get $u0
-wasm| i64.sub
-wasm| :end
-instruction block committed
+wasm> call $host_time_ms
+wasm> global.get $u0
+wasm> i64.sub
 result 0x0000000000000037 (55)
 ```
 
@@ -1525,8 +1510,8 @@ Commands:
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
 - `:defs` prints the current instruction block
-- `:def` starts a multi-line instruction block
-- `:end` commits the current instruction block
+- `:def` starts an optional multi-line instruction block
+- `:end` commits the optional instruction block
 - `:body` prints accumulated WebAssembly instructions
 - `:clear` clears the accumulated WebAssembly body
 - `:source` prints the last generated `.wat` file path
@@ -1540,6 +1525,9 @@ wasm> i64.add?          ;; Show help for one instruction.
 wasm> :instructions     ;; List supported instructions.
 wasm> :help memory      ;; Show memory/load/store notes.
 ```
+
+Each accepted instruction line is appended and run immediately. `:def ... :end`
+is only needed when you want to batch several instructions before running them.
 
 ## `rust-repl`
 
@@ -1582,9 +1570,7 @@ result 0x000000000000002a (42)
 <details><summary><h4><code>rust-repl</code>: Making a System Call</h4></summary>
 
 ```text
-rust> :def
-rust| unsafe extern "C" { fn getpid() -> i32; }
-rust| :end
+rust> unsafe extern "C" { fn getpid() -> i32; }
 definition block committed
 rust> state.result = unsafe { getpid() as u64 };
 result 0x0000000000001234 (4660)
@@ -1603,10 +1589,9 @@ This computes:
 ```
 
 ```text
-rust> :def
-rust| fn calc_add(a: u64, b: u64) -> u64 { a + b }
-rust| fn calc_mul(a: u64, b: u64) -> u64 { a * b }
-rust| :end
+rust> fn calc_add(a: u64, b: u64) -> u64 { a + b }
+definition block committed
+rust> fn calc_mul(a: u64, b: u64) -> u64 { a * b }
 definition block committed
 rust> state.result = calc_mul(calc_add(7, 35), 2);
 result 0x0000000000000054 (84)
@@ -1642,14 +1627,14 @@ Commands:
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
 - `:defs` prints persisted definitions
-- `:def` starts a persisted definition block
-- `:end` commits the current definition block
+- `:def` starts an explicit persisted definition block
+- `:end` commits the explicit definition block
 - `:clear` clears definitions
 - `:source` prints the last generated source file path
 - `:quit` exits
 
-Multi-line input is collected until `rustc` accepts it. Accepted top-level
-definitions are persisted; accepted statements run inside `repl_entry`. Press
+Multi-line input is collected until `rustc` accepts it. Top-level definitions
+are persisted automatically; accepted statements run inside `repl_entry`. Press
 Enter on an empty continuation line to force diagnostics.
 
 ## `zig-repl`
@@ -1692,9 +1677,7 @@ result 0x000000000000002a (42)
 <details><summary><h4><code>zig-repl</code>: Making a System Call</h4></summary>
 
 ```text
-zig> :def
-zig| extern fn getpid() c_int;
-zig| :end
+zig> extern fn getpid() c_int;
 definition block committed
 zig> state.result = @as(u64, @intCast(getpid()));
 result 0x0000000000001234 (4660)
@@ -1713,10 +1696,9 @@ This computes:
 ```
 
 ```text
-zig> :def
-zig| fn calcAdd(a: u64, b: u64) u64 { return a + b; }
-zig| fn calcMul(a: u64, b: u64) u64 { return a * b; }
-zig| :end
+zig> fn calcAdd(a: u64, b: u64) u64 { return a + b; }
+definition block committed
+zig> fn calcMul(a: u64, b: u64) u64 { return a * b; }
 definition block committed
 zig> state.result = calcMul(calcAdd(7, 35), 2);
 result 0x0000000000000054 (84)
@@ -1752,14 +1734,14 @@ Commands:
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
 - `:defs` prints persisted definitions
-- `:def` starts a persisted definition block
-- `:end` commits the current definition block
+- `:def` starts an explicit persisted definition block
+- `:end` commits the explicit definition block
 - `:clear` clears definitions
 - `:source` prints the last generated source file path
 - `:quit` exits
 
-Multi-line input is collected until `zig` accepts it. Accepted top-level
-definitions are persisted; accepted statements run inside `repl_entry`. Press
+Multi-line input is collected until `zig` accepts it. Top-level definitions are
+persisted automatically; accepted statements run inside `repl_entry`. Press
 Enter on an empty continuation line to force diagnostics.
 
 ## `go-repl`
@@ -1817,10 +1799,9 @@ This computes:
 ```
 
 ```text
-go> :def
-go| func calcAdd(a, b uint64) uint64 { return a + b }
-go| func calcMul(a, b uint64) uint64 { return a * b }
-go| :end
+go> func calcAdd(a, b uint64) uint64 { return a + b }
+definition block committed
+go> func calcMul(a, b uint64) uint64 { return a * b }
 definition block committed
 go> state.Result = calcMul(calcAdd(7, 35), 2)
 result 0x0000000000000054 (84)
@@ -1857,14 +1838,14 @@ Commands:
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
 - `:defs` prints persisted imports and definitions
-- `:def` starts a persisted definition block
-- `:end` commits the current definition block
+- `:def` starts an explicit persisted definition block
+- `:end` commits the explicit definition block
 - `:clear` clears imports and definitions
 - `:source` prints the last generated source file path
 - `:quit` exits
 
-Multi-line input is collected until `go build` accepts it. Accepted top-level
-definitions are persisted; accepted statements run inside `replEntry`. Press
+Multi-line input is collected until `go build` accepts it. Top-level definitions
+are persisted automatically; accepted statements run inside `replEntry`. Press
 Enter on an empty continuation line to force diagnostics.
 
 ## Runtime Internals 🛠️
