@@ -108,8 +108,9 @@ go> syscall?              // Show help for Go syscall examples.
 ```
 
 For C, C++, Objective-C, LLVM IR, Rust, Zig, and Go, top-level definitions can
-be pasted directly. `:def ... :end` is only an explicit fallback when you want to
-force definition mode.
+be pasted directly. `go-repl` also accepts normal `package` and `import`
+declarations. `:def ... :end` is only an explicit fallback when you want to force
+definition mode.
 
 ## `assembly-repl`
 
@@ -1751,7 +1752,8 @@ a temporary Go program, built with `go build`, and run as a child process. The
 REPL serializes persistent state before and after each run.
 
 Use it for small Go experiments, helper functions, and low-level package calls
-without keeping a full source file open.
+without keeping a full source file open. Normal `package main` and `import`
+declarations are accepted so snippets can stay close to source-file shape.
 
 ### `go-repl`: Quickstart
 
@@ -1776,11 +1778,35 @@ result 0x000000000000002a (42)
 
 </details>
 
-<details><summary><h4><code>go-repl</code>: Making a System Call</h4></summary>
-
-`syscall` is imported by default for low-level examples:
+<details><summary><h4><code>go-repl</code>: Package Imports</h4></summary>
 
 ```text
+go> package main
+go> import "math"
+import persisted
+go> state.Result = uint64(math.Abs(-42))
+result 0x000000000000002a (42)
+```
+
+Multi-line import blocks work too:
+
+```text
+go> import (
+go|     m "math"
+go| )
+import block persisted
+go> state.Result = uint64(m.Abs(-42))
+result 0x000000000000002a (42)
+```
+
+</details>
+
+<details><summary><h4><code>go-repl</code>: Making a System Call</h4></summary>
+
+```text
+go> package main
+go> import "syscall"
+import persisted
 go> pid, _, errno := syscall.RawSyscall(syscall.SYS_GETPID, 0, 0, 0)
 go| if errno == 0 { state.Result = uint64(pid) }
 result 0x0000000000001234 (4660)
@@ -1833,7 +1859,7 @@ Commands:
 - `:help <topic>` shows built-in help for a topic
 - `:topics` lists built-in topic help
 - `:instructions` lists built-in topic help
-- `:import <package>` persists an extra Go package import
+- `:import <package>` is a shortcut for a Go import declaration
 - `:state` prints persistent slots, result, and output
 - `:reset` resets persistent state
 - `:scratch` prints scratch memory details
@@ -1844,9 +1870,10 @@ Commands:
 - `:source` prints the last generated source file path
 - `:quit` exits
 
-Multi-line input is collected until `go build` accepts it. Top-level definitions
-are persisted automatically; accepted statements run inside `replEntry`. Press
-Enter on an empty continuation line to force diagnostics.
+Multi-line input is collected until `go build` accepts it. Package declarations
+are accepted as file boilerplate and ignored. Import declarations and top-level
+definitions are persisted automatically; accepted statements run inside
+`replEntry`. Press Enter on an empty continuation line to force diagnostics.
 
 ## Runtime Internals 🛠️
 

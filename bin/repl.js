@@ -641,7 +641,7 @@ function highlightOutputLine(line, state, modeName = 'asm') {
         return colors.yellow(line);
     }
 
-    if (/^definition block committed$|^definition block started|^instruction block committed$|^instruction block started|^directive persisted$|^import (?:persisted|already persisted)$|^state reset$|^register context reset$|^(?:imports and definitions|definitions) cleared$|^definitions and (?:LLVM IR|WebAssembly) body cleared$/.test(line)) {
+    if (/^definition block committed$|^definition block started|^instruction block committed$|^instruction block started|^directive persisted$|^import (?:block persisted|persisted|already persisted)$|^state reset$|^register context reset$|^(?:imports and definitions|definitions) cleared$|^definitions and (?:LLVM IR|WebAssembly) body cleared$/.test(line)) {
         return colors.green(line);
     }
 

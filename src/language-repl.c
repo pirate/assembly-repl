@@ -543,6 +543,7 @@ static const topic_help_t zig_topics[] = {
 static const topic_help_t go_topics[] = {
     {"state", "slot slots", "Persistent REPL state shared by every built snippet.", "state.Result\nstate.U[n]\nstate.F[n]\nstate.Scratch[n]", "state.Result = 42\nstate.U[0] += 1\nstate.Scratch[0] = 0xaa", "Go snippets run in a child process; the REPL serializes state before and after each run."},
     {"print", "fmt out", "Append formatted text to the REPL output buffer.", "Print(state, \"format\", args...)", "Print(state, \"answer=%d\\n\", state.U[0])", "This writes into state.Out, then the host prints it after the snippet returns."},
+    {"import", "package", "Persist normal Go package imports.", "package main\nimport \"math\"\nimport (\n    \"math\"\n    r \"math/rand\"\n)", "package main\nimport \"math\"\nstate.Result = uint64(math.Abs(-42))", "Package declarations are accepted as file boilerplate and ignored. Import declarations are persisted and emitted when used."},
     {"function", "func def", "Persist helper functions and types.", "func square(x uint64) uint64 {\n    return x * x\n}", "func twice(x uint64) uint64 { return x * 2 }\nstate.Result = twice(21)", "Multi-line input is collected until go build accepts it."},
     {"syscall", "system call", "Use Go's syscall package from a snippet.", "syscall.RawSyscall(syscall.SYS_GETPID, 0, 0, 0)", "pid, _, errno := syscall.RawSyscall(syscall.SYS_GETPID, 0, 0, 0)\nif errno == 0 { state.Result = uint64(pid) }", "syscall is imported by default for low-level examples."},
     {"gore", "go build", "Go execution follows the gore-style build/run loop.", "go build generated-file.go && ./generated-file .repl-build/go-state-*.bin", "state.Result = uint64(os.Getpid())", "Each accepted input is compiled into a temporary Go program and run as a child process."},
@@ -1184,9 +1185,13 @@ static void print_help(repl_mode_t mode) {
     puts("  :state             print persistent REPL state");
     puts("  :reset             reset persistent REPL state");
     puts("  :scratch           print scratch memory size and first bytes");
-    puts("  :defs              print persisted definitions");
     if (mode == MODE_GO) {
-        puts("  :import <package>  persist an extra Go import path");
+        puts("  :defs              print persisted imports and definitions");
+    } else {
+        puts("  :defs              print persisted definitions");
+    }
+    if (mode == MODE_GO) {
+        puts("  :import <package>  shortcut for a Go import declaration");
     }
     puts("  :def               start an explicit persisted definition block");
     puts("  :end               commit the explicit definition block");
@@ -1218,6 +1223,8 @@ static void print_help(repl_mode_t mode) {
         puts("Execution model:");
         puts("  Normal input is compiled inside func replEntry(state *ReplState).");
         puts("  Multi-line input continues until go build accepts it.");
+        puts("  Package declarations are accepted as file boilerplate and ignored.");
+        puts("  Import declarations can be pasted directly and are persisted automatically.");
         puts("  Top-level definitions can be pasted directly and are persisted automatically.");
         puts("  Accepted statements run.");
         puts("  Go snippets run in a child process with serialized persistent state.");
@@ -1428,23 +1435,22 @@ static bool text_contains(const char *text, const char *needle) {
     return text && needle && strstr(text, needle) != NULL;
 }
 
-static bool go_import_alias_from_line(const char *line, char *alias, size_t alias_size) {
-    const char *start = strchr(line, '"');
-    const char *end = start ? strchr(start + 1, '"') : NULL;
-    if (!start || !end || end <= start + 1) {
-        return false;
-    }
+static bool starts_with_word(const char *line, const char *word) {
+    size_t len = strlen(word);
+    return strncmp(line, word, len) == 0 &&
+        (line[len] == '\0' || isspace((unsigned char)line[len]));
+}
 
-    const char *path_start = start + 1;
-    const char *base = path_start;
-    for (const char *p = path_start; p < end; p++) {
+static bool go_import_base_alias(const char *path, char *alias, size_t alias_size) {
+    const char *base = path;
+    for (const char *p = path; *p; p++) {
         if (*p == '/') {
             base = p + 1;
         }
     }
 
     size_t len = 0;
-    for (const char *p = base; p < end && len + 1 < alias_size; p++) {
+    for (const char *p = base; *p && len + 1 < alias_size; p++) {
         if (isalnum((unsigned char)*p) || *p == '_') {
             alias[len++] = *p;
         } else {
@@ -1455,13 +1461,135 @@ static bool go_import_alias_from_line(const char *line, char *alias, size_t alia
     return len > 0;
 }
 
+static bool go_import_parts_from_spec(const char *line, char *alias, size_t alias_size,
+                                      char *path, size_t path_size, bool *explicit_alias) {
+    char spec[REPL_MAX_INPUT];
+    snprintf(spec, sizeof(spec), "%s", line);
+    char *trimmed = trim(spec);
+    if (starts_with_word(trimmed, "import")) {
+        trimmed = trim(trimmed + 6);
+    }
+
+    const char *start = strchr(trimmed, '"');
+    char quote = '"';
+    const char *raw_start = strchr(trimmed, '`');
+    if (!start || (raw_start && raw_start < start)) {
+        start = raw_start;
+        quote = '`';
+    }
+    const char *end = start ? strchr(start + 1, quote) : NULL;
+    if (!start || !end || end <= start + 1) {
+        return false;
+    }
+
+    size_t import_path_len = (size_t)(end - start - 1);
+    if (import_path_len + 1 > path_size) {
+        return false;
+    }
+    memcpy(path, start + 1, import_path_len);
+    path[import_path_len] = '\0';
+
+    char prefix[128];
+    size_t prefix_len = (size_t)(start - trimmed);
+    if (prefix_len >= sizeof(prefix)) {
+        return false;
+    }
+    memcpy(prefix, trimmed, prefix_len);
+    prefix[prefix_len] = '\0';
+    char *prefix_trimmed = trim(prefix);
+    *explicit_alias = prefix_trimmed[0] != '\0';
+
+    if (!*explicit_alias) {
+        return go_import_base_alias(path, alias, alias_size);
+    }
+
+    if ((strcmp(prefix_trimmed, ".") == 0 || strcmp(prefix_trimmed, "_") == 0) &&
+        alias_size >= 2) {
+        alias[0] = prefix_trimmed[0];
+        alias[1] = '\0';
+        return true;
+    }
+
+    if (!isalpha((unsigned char)prefix_trimmed[0]) && prefix_trimmed[0] != '_') {
+        return false;
+    }
+    size_t len = 0;
+    for (const char *p = prefix_trimmed; *p && len + 1 < alias_size; p++) {
+        if (isalnum((unsigned char)*p) || *p == '_') {
+            alias[len++] = *p;
+        } else {
+            return false;
+        }
+    }
+    alias[len] = '\0';
+    return len > 0;
+}
+
+static bool go_import_spec_from_line(const char *line, char *import_line, size_t import_line_size) {
+    char spec[REPL_MAX_INPUT];
+    snprintf(spec, sizeof(spec), "%s", line);
+    char *trimmed = trim(spec);
+    if (starts_with_word(trimmed, "import")) {
+        trimmed = trim(trimmed + 6);
+    }
+    if (trimmed[0] == '\0' || strcmp(trimmed, "(") == 0 || strcmp(trimmed, ")") == 0) {
+        return false;
+    }
+
+    char alias[128];
+    char path[REPL_MAX_INPUT];
+    bool explicit_alias = false;
+    if (!go_import_parts_from_spec(trimmed, alias, sizeof(alias), path, sizeof(path), &explicit_alias)) {
+        return false;
+    }
+
+    snprintf(import_line, import_line_size, "    %s\n", trimmed);
+    return true;
+}
+
+static bool go_import_block_starts(const char *line) {
+    if (!starts_with_word(line, "import")) {
+        return false;
+    }
+    char rest[REPL_MAX_INPUT];
+    snprintf(rest, sizeof(rest), "%s", line + 6);
+    return strcmp(trim(rest), "(") == 0;
+}
+
+static bool go_package_declaration(const char *line) {
+    return starts_with_word(line, "package");
+}
+
+static bool go_import_path_is_default(const char *path, const char *alias, bool explicit_alias) {
+    if (explicit_alias) {
+        return false;
+    }
+    return (strcmp(path, "fmt") == 0 && strcmp(alias, "fmt") == 0) ||
+        (strcmp(path, "os") == 0 && strcmp(alias, "os") == 0) ||
+        (strcmp(path, "syscall") == 0 && strcmp(alias, "syscall") == 0) ||
+        (strcmp(path, "unsafe") == 0 && strcmp(alias, "unsafe") == 0);
+}
+
 static bool go_code_uses_import_alias(const char *alias, const char *definitions,
                                       const char *candidate_definition, const char *line) {
+    if (strcmp(alias, "_") == 0 || strcmp(alias, ".") == 0) {
+        return true;
+    }
+
     char selector[128];
     snprintf(selector, sizeof(selector), "%s.", alias);
     return text_contains(definitions, selector) ||
         text_contains(candidate_definition, selector) ||
         text_contains(line, selector);
+}
+
+static void persist_go_import(text_buffer_t *imports, const char *import_line) {
+    if (!strstr(imports->data, import_line)) {
+        text_buffer_append(imports, import_line);
+        puts("import persisted");
+    } else {
+        puts("import already persisted");
+    }
 }
 
 static void write_go_extra_imports(FILE *fp, const char *imports, const char *definitions,
@@ -1480,7 +1608,11 @@ static void write_go_extra_imports(FILE *fp, const char *imports, const char *de
             import_line[len] = '\0';
 
             char alias[128];
-            if (go_import_alias_from_line(import_line, alias, sizeof(alias)) &&
+            char import_path[REPL_MAX_INPUT];
+            bool explicit_alias = false;
+            if (go_import_parts_from_spec(import_line, alias, sizeof(alias),
+                                          import_path, sizeof(import_path), &explicit_alias) &&
+                !go_import_path_is_default(import_path, alias, explicit_alias) &&
                 go_code_uses_import_alias(alias, definitions, candidate_definition, line)) {
                 fputs(import_line, fp);
                 fputc('\n', fp);
@@ -2050,12 +2182,6 @@ static void commit_definition_text(text_buffer_t *definitions, const char *text)
     }
 }
 
-static bool starts_with_word(const char *line, const char *word) {
-    size_t len = strlen(word);
-    return strncmp(line, word, len) == 0 &&
-        (line[len] == '\0' || isspace((unsigned char)line[len]));
-}
-
 static bool llvm_starts_toplevel_block(const char *line) {
     return starts_with_word(line, "define");
 }
@@ -2203,6 +2329,7 @@ int main(int argc, char **argv) {
     text_buffer_init(&ir_body);
     bool in_def_block = false;
     bool in_auto_def_block = false;
+    bool in_go_import_block = false;
 
     char last_source[256] = "";
     unsigned long serial = 1;
@@ -2213,7 +2340,8 @@ int main(int argc, char **argv) {
     char input[REPL_MAX_INPUT];
     for (;;) {
         bool in_multiline_statement = mode_is_statement_repl(mode) && pending_statement.len > 0;
-        printf("%s%c ", mode_name(mode), (in_def_block || in_auto_def_block || in_multiline_statement) ? '|' : '>');
+        printf("%s%c ", mode_name(mode),
+               (in_def_block || in_auto_def_block || in_go_import_block || in_multiline_statement) ? '|' : '>');
         fflush(stdout);
 
         if (!fgets(input, sizeof(input), stdin)) {
@@ -2234,7 +2362,9 @@ int main(int argc, char **argv) {
 
         char *line = trim(code_line);
         if (*line == '\0') {
-            if (in_def_block || in_auto_def_block) {
+            if (in_go_import_block) {
+                continue;
+            } else if (in_def_block || in_auto_def_block) {
                 text_buffer_append_line(&block, "");
             } else if (stripped_comment && mode_is_statement_repl(mode) && pending_statement.len > 0) {
                 continue;
@@ -2301,12 +2431,7 @@ int main(int argc, char **argv) {
             }
             char import_line[REPL_MAX_INPUT];
             snprintf(import_line, sizeof(import_line), "    \"%s\"\n", pkg);
-            if (!strstr(imports.data, import_line)) {
-                text_buffer_append(&imports, import_line);
-                puts("import persisted");
-            } else {
-                puts("import already persisted");
-            }
+            persist_go_import(&imports, import_line);
             continue;
         }
 
@@ -2370,6 +2495,7 @@ int main(int argc, char **argv) {
             text_buffer_clear(&ir_body);
             in_def_block = false;
             in_auto_def_block = false;
+            in_go_import_block = false;
             if (mode == MODE_LLVMIR) {
                 puts("definitions and LLVM IR body cleared");
             } else if (mode == MODE_GO) {
@@ -2384,6 +2510,7 @@ int main(int argc, char **argv) {
             text_buffer_clear(&block);
             in_def_block = true;
             in_auto_def_block = false;
+            in_go_import_block = false;
             puts("definition block started; finish with :end");
             continue;
         }
@@ -2404,6 +2531,23 @@ int main(int argc, char **argv) {
             in_def_block = false;
             in_auto_def_block = false;
             puts("definition block committed");
+            continue;
+        }
+
+        if (in_go_import_block) {
+            if (strcmp(line, ")") == 0) {
+                in_go_import_block = false;
+                puts("import block persisted");
+                continue;
+            }
+            char import_line[REPL_MAX_INPUT];
+            if (go_import_spec_from_line(line, import_line, sizeof(import_line))) {
+                if (!strstr(imports.data, import_line)) {
+                    text_buffer_append(&imports, import_line);
+                }
+            } else {
+                puts("invalid Go import spec");
+            }
             continue;
         }
 
@@ -2445,6 +2589,25 @@ int main(int argc, char **argv) {
         if (mode == MODE_LLVMIR && llvm_is_single_line_toplevel(line)) {
             commit_definition_text(&definitions, code_line);
             puts("definition block committed");
+            continue;
+        }
+
+        if (mode == MODE_GO && go_package_declaration(line)) {
+            continue;
+        }
+
+        if (mode == MODE_GO && go_import_block_starts(line)) {
+            in_go_import_block = true;
+            continue;
+        }
+
+        if (mode == MODE_GO && starts_with_word(line, "import")) {
+            char import_line[REPL_MAX_INPUT];
+            if (go_import_spec_from_line(line, import_line, sizeof(import_line))) {
+                persist_go_import(&imports, import_line);
+            } else {
+                puts("invalid Go import declaration");
+            }
             continue;
         }
 
